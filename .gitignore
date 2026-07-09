@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.local
+.supabase
+
+# Local Netlify folder
+.netlify
+
+# Local Supabase CLI state (not portable across machines)
+supabase/.branches
+supabase/.temp
