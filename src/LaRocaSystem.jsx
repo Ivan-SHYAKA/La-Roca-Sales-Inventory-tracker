@@ -10,7 +10,7 @@ import { SetupAdmin, LoginForm, UsersManager } from "./components/Auth";
 import { Dashboard } from "./components/Dashboard";
 import { MenuManager } from "./components/MenuManager";
 import { NewOrder } from "./components/NewOrder";
-import { BillingBoard } from "./components/BillingBoard";
+import { BillingBoard } from "./components/billing";
 import { DeptQueue } from "./components/DeptQueue";
 import { ReadyToServe } from "./components/ReadyToServe";
 import { CheckInQueue } from "./components/CheckInQueue";
