@@ -57,6 +57,7 @@ export function mapInventory(row) {
     id: row.id,
     name: row.name,
     line: row.line,
+    category: row.category || "",
     unit: row.unit,
     quantity: Number(row.quantity) || 0,
     reorderLevel: Number(row.reorder_level) || 0,
@@ -74,6 +75,7 @@ export function mapStockEvent(row) {
     user: row.user_name || "",
     userId: row.user_id,
     note: row.note || "",
+    orderId: row.order_id || null,
   };
 }
 

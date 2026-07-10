@@ -1,8 +1,13 @@
 import { Package, ShieldAlert } from "lucide-react";
 import { Card, SectionLabel, Badge, FlagsPanel } from "./ui";
 import { LINES } from "../lib/constants";
-import { reconciliation } from "../lib/business";
+import { reconciliation, dailyStockReport } from "../lib/business";
 import { fmt } from "../lib/format";
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function countBy(arr, key) {
   return arr.reduce((acc, x) => { acc[x[key]] = (acc[x[key]] || 0) + 1; return acc; }, {});
@@ -15,6 +20,7 @@ export function Dashboard({ orders, inventory, stockEvents, menu, flags }) {
   const pipeline = countBy(orders, "status");
   const lowStock = inventory.filter((i) => i.quantity <= i.reorderLevel);
   const recon = reconciliation(inventory, orders, menu, stockEvents, 30);
+  const todayFlagged = dailyStockReport(inventory, orders, menu, stockEvents, todayStr()).filter((r) => r.flagged);
 
   return (
     <div className="space-y-6">
@@ -33,6 +39,30 @@ export function Dashboard({ orders, inventory, stockEvents, menu, flags }) {
       </Card>
 
       <FlagsPanel flags={flags} />
+
+      <Card>
+        <SectionLabel>Today's flagged items</SectionLabel>
+        <p className="text-xs text-[var(--basalt)]/50 mb-3">Items where what the storekeeper recorded today doesn't match what today's orders imply should've been used.</p>
+        {todayFlagged.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">Nothing flagged for today.</p> : (
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10">
+              <th className="py-2 pr-3">Item</th><th className="py-2 pr-3">Recorded out</th><th className="py-2 pr-3">System estimate</th><th className="py-2 pr-3">Variance</th>
+            </tr></thead>
+            <tbody>
+              {todayFlagged.map((r) => (
+                <tr key={r.id} className="border-b border-[var(--basalt)]/5" style={{ background: "rgba(181,74,40,0.06)" }}>
+                  <td className="py-2 pr-3">{r.name}</td>
+                  <td className="py-2 pr-3 font-mono text-xs">{r.outByReason.usage} {r.unit}</td>
+                  <td className="py-2 pr-3 font-mono text-xs">{r.expectedOut.toFixed(1)} {r.unit}</td>
+                  <td className="py-2 pr-3 font-mono text-xs" style={{ color: "var(--ember)", fontWeight: 600 }}>
+                    {r.variance > 0 ? "+" : ""}{r.variance.toFixed(1)} {r.unit} <ShieldAlert size={12} className="inline ml-1" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
 
       <Card>
         <SectionLabel>Inventory reconciliation — last 30 days</SectionLabel>

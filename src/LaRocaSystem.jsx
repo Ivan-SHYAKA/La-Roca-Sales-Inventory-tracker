@@ -16,6 +16,7 @@ import { ReadyToServe } from "./components/ReadyToServe";
 import { CheckInQueue } from "./components/CheckInQueue";
 import { StockForm } from "./components/StockForm";
 import { InventoryView } from "./components/InventoryView";
+import { DailyStockReport } from "./components/DailyStockReport";
 import { ActivityLog } from "./components/ActivityLog";
 import { ToastStack } from "./components/Toasts";
 import logo from "./assets/la-roca-logo.svg";
@@ -122,7 +123,7 @@ export default function LaRocaSystem() {
 
   useEffect(() => {
     if (session && !tab) {
-      const defaults = { manager: "dashboard", waiter: "neworder", sales: "billing", kitchen: "kitchenqueue", barista: "baristaqueue", storekeeper: "stockin" };
+      const defaults = { manager: "dashboard", waiter: "neworder", sales: "billing", kitchen: "kitchenqueue", barista: "baristaqueue", storekeeper: "dailyreport" };
       setTab(defaults[session.role] || "dashboard");
     }
   }, [session]);
@@ -166,12 +167,12 @@ export default function LaRocaSystem() {
   }
 
   const tabsForRole = {
-    manager: [["dashboard", "Dashboard"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["users", "Users"], ["activity", "My Activity"]],
+    manager: [["dashboard", "Dashboard"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["users", "Users"], ["activity", "My Activity"]],
     waiter: [["neworder", "Take Order"], ["readytoserve", "Ready to Serve"], ["activity", "My Activity"]],
     sales: [["neworder", "New Order / Booking"], ["readytoserve", "Ready to Serve"], ["checkin", "Check-in"], ["billing", "Orders & Billing"], ["activity", "My Activity"]],
     kitchen: [["kitchenqueue", "Kitchen Queue"], ["activity", "My Activity"]],
     barista: [["baristaqueue", "Barista Queue"], ["activity", "My Activity"]],
-    storekeeper: [["stockin", "Stock In"], ["stockout", "Stock Out"], ["inventory", "Inventory"], ["activity", "My Activity"]],
+    storekeeper: [["dailyreport", "Daily Stock Report"], ["stockin", "Stock In"], ["stockout", "Stock Out"], ["inventory", "Inventory"], ["activity", "My Activity"]],
   }[session.role];
 
   return (
@@ -211,8 +212,9 @@ export default function LaRocaSystem() {
       {tab === "baristaqueue" && <DeptQueue dept="barista" line="coffeeshop" orders={orders} session={session} refresh={loadData} onError={setError} flags={flags} />}
       {tab === "checkin" && <CheckInQueue orders={orders} menu={menu} inventory={inventory} session={session} refresh={loadData} onError={setError} />}
       {tab === "stockin" && <StockForm mode="in" inventory={inventory} stockEvents={stockEvents} session={session} refresh={loadData} onError={setError} />}
-      {tab === "stockout" && <StockForm mode="out" inventory={inventory} stockEvents={stockEvents} session={session} refresh={loadData} onError={setError} />}
+      {tab === "stockout" && <StockForm mode="out" inventory={inventory} stockEvents={stockEvents} orders={orders} session={session} refresh={loadData} onError={setError} />}
       {tab === "inventory" && <InventoryView inventory={inventory} orders={orders} menu={menu} stockEvents={stockEvents} />}
+      {tab === "dailyreport" && <DailyStockReport inventory={inventory} orders={orders} menu={menu} stockEvents={stockEvents} session={session} />}
       {tab === "activity" && <ActivityLog orders={orders} stockEvents={stockEvents} inventory={inventory} session={session} />}
     </div>
   );

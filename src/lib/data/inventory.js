@@ -15,7 +15,7 @@ export async function fetchStockEvents() {
 // ---------- INVENTORY / STOCK EVENTS ----------
 // stock_events insert triggers a DB-side update of inventory.quantity (see migration),
 // so this never has to read-modify-write the running total itself.
-export async function logStockEvent({ mode, existingId, newItem, quantity, reason, note, session }) {
+export async function logStockEvent({ mode, existingId, newItem, quantity, reason, note, session, orderId }) {
   let invId = existingId;
   if (!invId) {
     const { data: item, error } = await supabase
@@ -41,6 +41,7 @@ export async function logStockEvent({ mode, existingId, newItem, quantity, reaso
     user_id: session.id,
     user_name: session.name,
     note: note || null,
+    order_id: orderId || null,
   });
   check(eventError);
 }
