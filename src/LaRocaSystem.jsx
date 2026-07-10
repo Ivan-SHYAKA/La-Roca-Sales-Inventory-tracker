@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Loader2, LogOut } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import { fetchProfile, fetchProfiles, fetchOrders, fetchMenu, fetchInventory, fetchStockEvents, subscribeToChanges } from "./lib/data";
+import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, subscribeToChanges } from "./lib/data";
 import { computeFlags } from "./lib/business";
 import { ROLES, LINES } from "./lib/constants";
 import { orderLabel } from "./lib/format";
@@ -42,6 +42,7 @@ export default function LaRocaSystem() {
   const [tick, setTick] = useState(0);
 
   const [orders, setOrders] = useState([]);
+  const [storeOrders, setStoreOrders] = useState([]);
   const [menu, setMenu] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [stockEvents, setStockEvents] = useState([]);
@@ -56,10 +57,10 @@ export default function LaRocaSystem() {
 
   const loadData = useCallback(async () => {
     try {
-      const [o, m, inv, se, u] = await Promise.all([
-        fetchOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchProfiles(),
+      const [o, so, m, inv, se, u] = await Promise.all([
+        fetchOrders(), fetchStorekeeperOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchProfiles(),
       ]);
-      setOrders(o); setMenu(m); setInventory(inv); setStockEvents(se); setUsers(u);
+      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setUsers(u);
       setError("");
     } catch (e) {
       setError(e.message || "Couldn't load data — check your connection and try again.");
@@ -212,9 +213,9 @@ export default function LaRocaSystem() {
       {tab === "baristaqueue" && <DeptQueue dept="barista" line="coffeeshop" orders={orders} session={session} refresh={loadData} onError={setError} flags={flags} />}
       {tab === "checkin" && <CheckInQueue orders={orders} menu={menu} inventory={inventory} session={session} refresh={loadData} onError={setError} />}
       {tab === "stockin" && <StockForm mode="in" inventory={inventory} stockEvents={stockEvents} session={session} refresh={loadData} onError={setError} />}
-      {tab === "stockout" && <StockForm mode="out" inventory={inventory} stockEvents={stockEvents} orders={orders} session={session} refresh={loadData} onError={setError} />}
-      {tab === "inventory" && <InventoryView inventory={inventory} orders={orders} menu={menu} stockEvents={stockEvents} />}
-      {tab === "dailyreport" && <DailyStockReport inventory={inventory} orders={orders} menu={menu} stockEvents={stockEvents} session={session} />}
+      {tab === "stockout" && <StockForm mode="out" inventory={inventory} stockEvents={stockEvents} orders={storeOrders} session={session} refresh={loadData} onError={setError} />}
+      {tab === "inventory" && <InventoryView inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} />}
+      {tab === "dailyreport" && <DailyStockReport inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} session={session} />}
       {tab === "activity" && <ActivityLog orders={orders} stockEvents={stockEvents} inventory={inventory} session={session} />}
     </div>
   );

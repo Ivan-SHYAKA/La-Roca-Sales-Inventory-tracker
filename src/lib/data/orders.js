@@ -1,6 +1,6 @@
 import { supabase } from "../supabaseClient";
 import { now } from "../format";
-import { mapOrder, check } from "./mappers";
+import { mapOrder, mapStorekeeperOrders, check } from "./mappers";
 
 export async function fetchOrders() {
   const { data, error } = await supabase
@@ -9,6 +9,15 @@ export async function fetchOrders() {
     .order("placed_at", { ascending: false });
   check(error);
   return (data || []).map(mapOrder);
+}
+
+// Restricted read path for storekeeper: only item/line/status/table-number/served-at,
+// via the storekeeper_order_items() SECURITY DEFINER function — no client name, phone,
+// payment, or check-in details. Returns [] for any other role (see migration 0007).
+export async function fetchStorekeeperOrders() {
+  const { data, error } = await supabase.rpc("storekeeper_order_items");
+  check(error);
+  return mapStorekeeperOrders(data);
 }
 
 // ---------- ORDERS ----------

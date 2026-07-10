@@ -79,6 +79,26 @@ export function mapStockEvent(row) {
   };
 }
 
+// Groups the flat rows from the storekeeper_order_items() RPC (one row per order
+// item) back into an order-like shape — the same {id, line, status, items} shape
+// `dailyStockReport`/`computeStorekeeperAlerts` already expect, just missing every
+// field that function deliberately doesn't expose (client, phone, payment, etc).
+export function mapStorekeeperOrders(rows) {
+  const byOrder = {};
+  (rows || []).forEach((r) => {
+    const o = (byOrder[r.order_id] ||= {
+      id: r.order_id,
+      tableNumber: r.table_number || "",
+      line: r.line,
+      status: r.status,
+      servedAt: r.served_at,
+      items: [],
+    });
+    o.items.push({ menuId: r.menu_item_id, name: r.item_name, qty: Number(r.qty) || 0 });
+  });
+  return Object.values(byOrder);
+}
+
 export function check(error) {
   if (error) throw new Error(error.message);
 }
