@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus } from "lucide-react";
 import { Card, SectionLabel, Input, Select, PrimaryBtn } from "./ui";
+import { ItemPicker } from "./ItemPicker";
 import { LINES } from "../lib/constants";
 import { draftGet, draftSet, draftClear } from "../lib/draft";
 import { logStockEvent } from "../lib/data";
@@ -29,6 +30,13 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
     const qty = Number(quantity);
     if (!qty || qty <= 0) return;
     if (!existingId && !newItem.name) return;
+    if (!isIn && existingId) {
+      const available = invMap[existingId]?.quantity ?? 0;
+      if (qty > available) {
+        onError?.(`Only ${available} ${invMap[existingId]?.unit || ""} of ${invMap[existingId]?.name} left in stock — can't log ${qty} out.`);
+        return;
+      }
+    }
     setBusy(true);
     try {
       await logStockEvent({ mode, existingId, newItem, quantity: qty, reason, note, session, orderId: orderId || null });
@@ -52,10 +60,13 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
       <Card>
         <SectionLabel>{isIn ? "Record stock coming in" : "Record stock going out"}</SectionLabel>
         <label className="text-xs text-[var(--basalt)]/60">Item</label>
-        <Select value={existingId} onChange={(e) => setExistingId(e.target.value)}>
-          <option value="">{isIn ? "— New item —" : "Select existing item"}</option>
-          {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.quantity} {i.unit} in stock)</option>)}
-        </Select>
+        <ItemPicker
+          items={inventory}
+          value={existingId}
+          onChange={setExistingId}
+          getLabel={(i) => `${i.name} (${i.quantity} ${i.unit} in stock)`}
+          placeholder={isIn ? "Search item, or leave blank for a new one…" : "Search item…"}
+        />
         {!existingId && isIn && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
             <div><label className="text-xs text-[var(--basalt)]/60">Name</label><Input value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} /></div>
@@ -66,7 +77,11 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
           </div>
         )}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">
-          <div><label className="text-xs text-[var(--basalt)]/60">Quantity</label><Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
+          <div>
+            <label className="text-xs text-[var(--basalt)]/60">Quantity</label>
+            <Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} max={!isIn && existingId ? invMap[existingId]?.quantity : undefined} />
+            {!isIn && existingId && <p className="text-xs text-[var(--basalt)]/40 mt-0.5">{invMap[existingId]?.quantity} {invMap[existingId]?.unit} available</p>}
+          </div>
           {!isIn && (
             <div><label className="text-xs text-[var(--basalt)]/60">Reason</label>
               <Select value={reason} onChange={(e) => setReason(e.target.value)}>

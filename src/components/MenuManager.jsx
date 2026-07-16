@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { Card, SectionLabel, Input, Select, Badge, PrimaryBtn, ConfirmModal } from "./ui";
+import { ItemPicker } from "./ItemPicker";
 import { LINES } from "../lib/constants";
 import { fmt } from "../lib/format";
 import { draftGet, draftSet, draftClear } from "../lib/draft";
@@ -61,9 +62,8 @@ export function MenuManager({ menu, inventory, session, refresh, onError }) {
           <div className="text-xs text-[var(--basalt)]/60 mb-2">Recipe (ingredients consumed per unit sold — used for inventory reconciliation)</div>
           {recipe.map((r, i) => (
             <div key={i} className="flex gap-2 mb-2 items-center">
-              <Select value={r.invId} onChange={(e) => updateRow(i, { invId: e.target.value })}>
-                {inventory.map((inv) => <option key={inv.id} value={inv.id}>{inv.name} ({inv.unit})</option>)}
-              </Select>
+              <ItemPicker items={inventory} value={r.invId} onChange={(invId) => updateRow(i, { invId })}
+                getLabel={(inv) => `${inv.name} (${inv.unit})`} placeholder="Search ingredient…" className="flex-1" />
               <Input type="number" placeholder="qty per unit" value={r.qty} onChange={(e) => updateRow(i, { qty: e.target.value })} />
               <button onClick={() => removeRow(i)}><Trash2 size={14} className="text-[var(--basalt)]/40" /></button>
             </div>
