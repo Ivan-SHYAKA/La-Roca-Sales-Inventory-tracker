@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Card, SectionLabel, Badge } from "./ui";
 import { LINES } from "../lib/constants";
@@ -5,16 +6,47 @@ import { reconciliation } from "../lib/business";
 import { fmt } from "../lib/format";
 
 export function InventoryView({ inventory, orders, menu, stockEvents }) {
+  const [lineFilter, setLineFilter] = useState("all");
   const recon = reconciliation(inventory, orders, menu, stockEvents, 30);
+
+  const countByLine = useMemo(() => {
+    const c = {};
+    inventory.forEach((i) => { c[i.line] = (c[i.line] || 0) + 1; });
+    return c;
+  }, [inventory]);
+
+  const visibleInventory = useMemo(() => {
+    const filtered = lineFilter === "all" ? inventory : inventory.filter((i) => i.line === lineFilter);
+    return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+  }, [inventory, lineFilter]);
+
   return (
     <div className="space-y-6">
       <Card>
         <SectionLabel>Inventory</SectionLabel>
-        {inventory.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items yet.</p> : (
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button onClick={() => setLineFilter("all")}
+            className="text-xs px-3 py-1.5 rounded-full font-medium border"
+            style={lineFilter === "all"
+              ? { background: "var(--basalt)", color: "white", borderColor: "var(--basalt)" }
+              : { background: "transparent", color: "var(--basalt)", borderColor: "rgba(38,34,29,0.15)" }}>
+            All ({inventory.length})
+          </button>
+          {Object.entries(LINES).map(([key, l]) => (
+            <button key={key} onClick={() => setLineFilter(key)}
+              className="text-xs px-3 py-1.5 rounded-full font-medium border"
+              style={lineFilter === key
+                ? { background: l.color, color: "white", borderColor: l.color }
+                : { background: l.color + "11", color: l.color, borderColor: l.color + "44" }}>
+              {l.label} ({countByLine[key] || 0})
+            </button>
+          ))}
+        </div>
+        {visibleInventory.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items yet.</p> : (
           <table className="w-full text-sm">
             <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10"><th className="py-2 pr-3">Item</th><th className="py-2 pr-3">Line</th><th className="py-2 pr-3">Quantity</th><th className="py-2 pr-3">Reorder at</th><th className="py-2 pr-3">Value</th></tr></thead>
             <tbody>
-              {inventory.map((i) => {
+              {visibleInventory.map((i) => {
                 const low = i.quantity <= i.reorderLevel;
                 return (
                   <tr key={i.id} className="border-b border-[var(--basalt)]/5" style={{ background: low ? "rgba(181,74,40,0.06)" : "transparent" }}>
