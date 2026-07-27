@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Loader2, LogOut } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, subscribeToChanges } from "./lib/data";
+import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, subscribeToChanges } from "./lib/data";
 import { computeFlags } from "./lib/business";
 import { ROLES, LINES } from "./lib/constants";
 import { orderLabel } from "./lib/format";
@@ -17,6 +17,7 @@ import { CheckInQueue } from "./components/CheckInQueue";
 import { StockForm } from "./components/StockForm";
 import { InventoryView } from "./components/InventoryView";
 import { DailyStockReport } from "./components/DailyStockReport";
+import { StockAlertsBanner } from "./components/StockAlertsBanner";
 import { ActivityLog } from "./components/ActivityLog";
 import { ToastStack } from "./components/Toasts";
 import logo from "./assets/la-roca-logo.svg";
@@ -43,6 +44,7 @@ export default function LaRocaSystem() {
 
   const [orders, setOrders] = useState([]);
   const [storeOrders, setStoreOrders] = useState([]);
+  const [stockAlerts, setStockAlerts] = useState([]);
   const [menu, setMenu] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [stockEvents, setStockEvents] = useState([]);
@@ -57,10 +59,10 @@ export default function LaRocaSystem() {
 
   const loadData = useCallback(async () => {
     try {
-      const [o, so, m, inv, se, u] = await Promise.all([
-        fetchOrders(), fetchStorekeeperOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchProfiles(),
+      const [o, so, m, inv, se, sa, u] = await Promise.all([
+        fetchOrders(), fetchStorekeeperOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchStockAlerts(), fetchProfiles(),
       ]);
-      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setUsers(u);
+      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u);
       setError("");
     } catch (e) {
       setError(e.message || "Couldn't load data — check your connection and try again.");
@@ -117,7 +119,7 @@ export default function LaRocaSystem() {
     if (!session) return;
     loadData();
     return subscribeToChanges(
-      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "profiles"],
+      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles"],
       loadData
     );
   }, [session?.id, loadData]);
@@ -202,6 +204,15 @@ export default function LaRocaSystem() {
       </div>
 
       {error && <div className="mb-4 text-sm text-[var(--ember)] no-print">{error}</div>}
+
+      {["kitchen", "storekeeper", "manager"].includes(session.role) && (
+        <StockAlertsBanner
+          alerts={stockAlerts}
+          canResolve={session.role === "storekeeper" || session.role === "manager"}
+          refresh={loadData}
+          onError={setError}
+        />
+      )}
 
       {tab === "dashboard" && <Dashboard orders={orders} inventory={inventory} stockEvents={stockEvents} menu={menu} flags={flags} />}
       {tab === "menu" && <MenuManager menu={menu} inventory={inventory} session={session} refresh={loadData} onError={setError} />}

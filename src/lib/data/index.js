@@ -6,3 +6,4 @@ export * from "./menu";
 export * from "./inventory";
 export * from "./profiles";
 export * from "./realtime";
+export * from "./stockAlerts";

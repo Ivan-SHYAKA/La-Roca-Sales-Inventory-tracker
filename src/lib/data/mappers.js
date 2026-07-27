@@ -99,6 +99,27 @@ export function mapStorekeeperOrders(rows) {
   return Object.values(byOrder);
 }
 
+export function mapStockAlert(row) {
+  return {
+    id: row.id,
+    invId: row.inventory_id,
+    orderId: row.order_id,
+    menuId: row.menu_item_id,
+    message: row.message,
+    severity: row.severity,
+    resolved: row.resolved,
+    createdAt: row.created_at,
+  };
+}
+
+// Preserves the Postgres error code (e.g. 'P0001' from a trigger's RAISE EXCEPTION) on
+// the thrown Error — callers that only read `.message` are unaffected, but placeOrder's
+// stock-block handling needs `.code` to tell "insufficient stock" apart from any other
+// insert failure.
 export function check(error) {
-  if (error) throw new Error(error.message);
+  if (error) {
+    const e = new Error(error.message);
+    e.code = error.code;
+    throw e;
+  }
 }
