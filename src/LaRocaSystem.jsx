@@ -39,7 +39,6 @@ export default function LaRocaSystem() {
   const [session, setSession] = useState(null);
   const [noAccountsYet, setNoAccountsYet] = useState(false);
   const [tab, setTab] = useState(null);
-  const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
 
   const [orders, setOrders] = useState([]);
@@ -52,6 +51,16 @@ export default function LaRocaSystem() {
   const [toasts, setToasts] = useState([]);
   const seenOrderIds = useRef(null); // null = "haven't taken a baseline snapshot yet" -> don't alert
 
+  // Pop-up notifications (top-right, auto-dismiss + manual close) for both the existing
+  // new-order chime and every action failure — replaces the old static inline red banner,
+  // so a failed action is as hard to miss as a new order arriving.
+  const pushToast = useCallback((message, type = "info") => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setToasts((t) => [...t, { id, message, type }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), type === "error" ? 10000 : 8000);
+  }, []);
+  const pushError = useCallback((message) => pushToast(message, "error"), [pushToast]);
+
   useEffect(() => {
     const iv = setInterval(() => setTick((x) => x + 1), 30000);
     return () => clearInterval(iv);
@@ -63,11 +72,10 @@ export default function LaRocaSystem() {
         fetchOrders(), fetchStorekeeperOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchStockAlerts(), fetchProfiles(),
       ]);
       setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u);
-      setError("");
     } catch (e) {
-      setError(e.message || "Couldn't load data — check your connection and try again.");
+      pushError(e.message || "Couldn't load data — check your connection and try again.");
     }
-  }, []);
+  }, [pushError]);
 
   // Auth bootstrap: resume an existing Supabase session, or figure out whether
   // this is a brand-new install (no accounts yet -> show the setup screen).
@@ -147,9 +155,7 @@ export default function LaRocaSystem() {
           session.role === "sales"
         )
         .forEach((o) => {
-          const id = `${o.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-          setToasts((t) => [...t, { id, message: `New order — ${orderLabel(o)} (${LINES[o.line].label})` }]);
-          setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 8000);
+          pushToast(`New order — ${orderLabel(o)} (${LINES[o.line].label})`);
           playChime();
         });
     }
@@ -203,28 +209,26 @@ export default function LaRocaSystem() {
         </div>
       </div>
 
-      {error && <div className="mb-4 text-sm text-[var(--ember)] no-print">{error}</div>}
-
       {["kitchen", "storekeeper", "manager"].includes(session.role) && (
         <StockAlertsBanner
           alerts={stockAlerts}
           canResolve={session.role === "storekeeper" || session.role === "manager"}
           refresh={loadData}
-          onError={setError}
+          onError={pushError}
         />
       )}
 
       {tab === "dashboard" && <Dashboard orders={orders} inventory={inventory} stockEvents={stockEvents} menu={menu} flags={flags} />}
-      {tab === "menu" && <MenuManager menu={menu} inventory={inventory} session={session} refresh={loadData} onError={setError} />}
-      {tab === "users" && <UsersManager users={users} session={session} refreshUsers={loadData} onError={setError} />}
-      {tab === "billing" && <BillingBoard orders={orders} session={session} refresh={loadData} onError={setError} />}
-      {tab === "neworder" && <NewOrder menu={menu} orders={orders} session={session} refresh={loadData} onError={setError} flags={flags} />}
-      {tab === "readytoserve" && <ReadyToServe orders={orders} session={session} refresh={loadData} onError={setError} flags={flags} />}
-      {tab === "kitchenqueue" && <DeptQueue dept="kitchen" line="restaurant" orders={orders} session={session} refresh={loadData} onError={setError} flags={flags} />}
-      {tab === "baristaqueue" && <DeptQueue dept="barista" line="coffeeshop" orders={orders} session={session} refresh={loadData} onError={setError} flags={flags} />}
-      {tab === "checkin" && <CheckInQueue orders={orders} menu={menu} inventory={inventory} session={session} refresh={loadData} onError={setError} />}
-      {tab === "stockin" && <StockForm mode="in" inventory={inventory} stockEvents={stockEvents} session={session} refresh={loadData} onError={setError} />}
-      {tab === "stockout" && <StockForm mode="out" inventory={inventory} stockEvents={stockEvents} orders={storeOrders} session={session} refresh={loadData} onError={setError} />}
+      {tab === "menu" && <MenuManager menu={menu} inventory={inventory} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "users" && <UsersManager users={users} session={session} refreshUsers={loadData} onError={pushError} />}
+      {tab === "billing" && <BillingBoard orders={orders} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "neworder" && <NewOrder menu={menu} orders={orders} session={session} refresh={loadData} onError={pushError} flags={flags} />}
+      {tab === "readytoserve" && <ReadyToServe orders={orders} session={session} refresh={loadData} onError={pushError} flags={flags} />}
+      {tab === "kitchenqueue" && <DeptQueue dept="kitchen" line="restaurant" orders={orders} session={session} refresh={loadData} onError={pushError} flags={flags} />}
+      {tab === "baristaqueue" && <DeptQueue dept="barista" line="coffeeshop" orders={orders} session={session} refresh={loadData} onError={pushError} flags={flags} />}
+      {tab === "checkin" && <CheckInQueue orders={orders} menu={menu} inventory={inventory} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "stockin" && <StockForm mode="in" inventory={inventory} stockEvents={stockEvents} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "stockout" && <StockForm mode="out" inventory={inventory} stockEvents={stockEvents} orders={storeOrders} session={session} refresh={loadData} onError={pushError} />}
       {tab === "inventory" && <InventoryView inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} />}
       {tab === "dailyreport" && <DailyStockReport inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} session={session} />}
       {tab === "activity" && <ActivityLog orders={orders} stockEvents={stockEvents} inventory={inventory} session={session} />}
