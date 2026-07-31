@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import { Card, SectionLabel, Input, FlagsPanel } from "./ui";
-import { dailyStockReport, computeStorekeeperAlerts } from "../lib/business";
+import { dailyStockReport, computeStorekeeperAlerts, autoDeductedUsageForDay } from "../lib/business";
 
 function todayStr() {
   const d = new Date();
@@ -21,6 +21,14 @@ export function DailyStockReport({ inventory, orders, menu, stockEvents, session
     });
     return Object.entries(byCategory);
   }, [report]);
+
+  // Manager/admin only: the system's own real-time deduction ledger (auto-generated the
+  // moment an order was placed), independent of what the storekeeper separately recorded
+  // above. Not shown to storekeeper — this is a check *on* their recording, not part of it.
+  const autoDeducted = useMemo(
+    () => (session.role === "manager" ? autoDeductedUsageForDay(inventory, stockEvents, date) : []),
+    [inventory, stockEvents, date, session.role]
+  );
 
   return (
     <div className="space-y-6">
@@ -75,6 +83,38 @@ export function DailyStockReport({ inventory, orders, menu, stockEvents, session
           </table>
         </Card>
       ))}
+
+      {session.role === "manager" && (
+        <Card>
+          <SectionLabel>Auto-calculated stock out (system, admin only)</SectionLabel>
+          <p className="text-xs text-[var(--basalt)]/50 mb-3">
+            What the system deducted automatically the moment each order was placed, straight from recipe quantities —
+            independent of anything the storekeeper logged above. Only visible to admin/manager.
+          </p>
+          {autoDeducted.length === 0 ? (
+            <p className="text-sm text-[var(--basalt)]/50">No order-driven auto-deduction for this day.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10">
+                  <th className="py-2 pr-3">Item</th>
+                  <th className="py-2 pr-3">Category</th>
+                  <th className="py-2 pr-3">Auto-deducted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {autoDeducted.map((r) => (
+                  <tr key={r.id} className="border-b border-[var(--basalt)]/5">
+                    <td className="py-2 pr-3">{r.name}</td>
+                    <td className="py-2 pr-3 text-xs text-[var(--basalt)]/60">{r.category || "—"}</td>
+                    <td className="py-2 pr-3 font-mono text-xs">{r.autoDeducted.toFixed(2)} {r.unit}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

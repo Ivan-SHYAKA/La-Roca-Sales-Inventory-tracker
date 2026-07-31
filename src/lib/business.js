@@ -44,11 +44,15 @@ function dayBounds(date) {
   return [start, start + 86400000];
 }
 
-// The storekeeper's own report for one calendar day, built purely from stock_events.
+// The storekeeper's own report for one calendar day, built purely from stock_events —
+// deliberately excludes source='auto_deduction' events (0009's order-time auto-deduct)
+// so this stays a pure record of what a human actually logged, independent of what the
+// system separately auto-tracks. See autoDeductedUsageForDay for that other side.
 export function dailyItemLedger(inventory, stockEvents, date) {
   const [dayStart, dayEnd] = dayBounds(date);
+  const manualEvents = stockEvents.filter((e) => e.source !== "auto_deduction");
   return inventory.map((inv) => {
-    const events = stockEvents.filter((e) => e.invId === inv.id);
+    const events = manualEvents.filter((e) => e.invId === inv.id);
     const before = events.filter((e) => new Date(e.date).getTime() < dayStart);
     const opening = Math.max(0, before.reduce((s, e) => s + (e.type === "in" ? e.quantity : -e.quantity), 0));
     const today = events.filter((e) => { const t = new Date(e.date).getTime(); return t >= dayStart && t < dayEnd; });
@@ -58,6 +62,24 @@ export function dailyItemLedger(inventory, stockEvents, date) {
     const outQty = Object.values(outByReason).reduce((s, v) => s + v, 0);
     return { id: inv.id, name: inv.name, unit: inv.unit, category: inv.category, reorderLevel: inv.reorderLevel, opening, in: inQty, out: outQty, outByReason, closing: Math.max(0, opening + inQty - outQty) };
   });
+}
+
+// Manager/admin-only: the system's own real-time deduction ledger for the day — every
+// stock_events row the order-placement trigger auto-generated (source='auto_deduction'),
+// which reflects actual usage at the moment each order was placed, not just what a
+// storekeeper separately claims. Grouped per item, same shape as dailyItemLedger's rows
+// so the two can render side by side.
+export function autoDeductedUsageForDay(inventory, stockEvents, date) {
+  const [dayStart, dayEnd] = dayBounds(date);
+  const today = stockEvents.filter((e) => {
+    const t = new Date(e.date).getTime();
+    return e.source === "auto_deduction" && e.type === "out" && t >= dayStart && t < dayEnd;
+  });
+  const byItem = {};
+  today.forEach((e) => { byItem[e.invId] = (byItem[e.invId] || 0) + e.quantity; });
+  return inventory
+    .map((inv) => ({ id: inv.id, name: inv.name, unit: inv.unit, category: inv.category, autoDeducted: byItem[inv.id] || 0 }))
+    .filter((r) => r.autoDeducted > 0);
 }
 
 // The system's own calculation for that same day: recipe-expected usage from served/billed orders.

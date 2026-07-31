@@ -21,7 +21,7 @@ export async function fetchStorekeeperOrders() {
 }
 
 // ---------- ORDERS ----------
-export async function placeOrder({ client, tableNumber, phone, line, cart, session }) {
+export async function placeOrder({ client, tableNumber, phone, line, cart, session, groupId }) {
   const total = cart.reduce((s, x) => s + x.price * x.qty, 0);
   // Generate the id client-side and skip `.select()` on the insert: waiters can
   // insert orders but have no SELECT policy on orders (insert-only, per spec), and
@@ -38,6 +38,7 @@ export async function placeOrder({ client, tableNumber, phone, line, cart, sessi
     total,
     placed_by: session.id,
     placed_by_name: session.name,
+    group_id: groupId || null,
   });
   check(error);
   const { error: itemsError } = await supabase.from("order_items").insert(

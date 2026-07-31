@@ -12,6 +12,7 @@ export function mapOrder(row) {
     tableNumber: row.table_number || "",
     phone: row.phone || "",
     line: row.line,
+    groupId: row.group_id || null,
     status: row.status,
     total: Number(row.total) || 0,
     placedAt: row.placed_at,
@@ -76,6 +77,7 @@ export function mapStockEvent(row) {
     userId: row.user_id,
     note: row.note || "",
     orderId: row.order_id || null,
+    source: row.source || "manual",
   };
 }
 

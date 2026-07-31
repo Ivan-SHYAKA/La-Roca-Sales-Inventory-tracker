@@ -56,9 +56,26 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
 
   // "Mine" regardless of role: waiters only ever see their own placed orders anyway (RLS),
   // sales/manager see everyone's — this narrows it to just what this person has been placing.
-  const myOrders = useMemo(() => {
-    return (orders || [])
-      .filter((o) => o.placedById === session.id)
+  // Grouped by groupId (falling back to a singleton group for older orders placed before
+  // that column existed) so a table's mixed-line order shows as one card here too, instead
+  // of once per department.
+  const myOrderGroups = useMemo(() => {
+    const mine = (orders || []).filter((o) => o.placedById === session.id);
+    const used = new Set();
+    const groups = [];
+    mine.forEach((o) => {
+      if (used.has(o.id)) return;
+      const siblings = o.groupId ? mine.filter((x) => !used.has(x.id) && x.groupId === o.groupId) : [o];
+      siblings.forEach((s) => used.add(s.id));
+      groups.push(siblings);
+    });
+    return groups
+      .map((g) => ({
+        key: g.map((o) => o.id).sort().join("-"),
+        orders: g,
+        placedAt: g.map((o) => o.placedAt).sort()[0],
+        total: g.reduce((s, o) => s + o.total, 0),
+      }))
       .sort((a, b) => new Date(b.placedAt) - new Date(a.placedAt))
       .slice(0, 8);
   }, [orders, session.id]);
@@ -92,12 +109,16 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
       // The kitchen/barista/reception queues each route by a single order.line, so a cart
       // mixing categories (e.g. a burger + a cappuccino) becomes one order per line here —
       // all sharing the same table/client — rather than trying to make one order serve
-      // multiple departments at once.
+      // multiple departments at once. groupId ties these sibling orders back together so
+      // ReadyToServe (and this screen's own recent-orders list) can show them as one card
+      // for the table instead of several, even though kitchen/barista/billing keep working
+      // on the individual per-line orders exactly as before.
       const groups = {};
       cart.forEach((x) => { (groups[x.line] ||= []).push(x); });
       const lineKeys = Object.keys(groups);
+      const groupId = crypto.randomUUID();
       for (const ln of lineKeys) {
-        await placeOrder({ client: client.trim(), tableNumber: tableNumber.trim(), phone: phone.trim(), line: ln, cart: groups[ln], session });
+        await placeOrder({ client: client.trim(), tableNumber: tableNumber.trim(), phone: phone.trim(), line: ln, cart: groups[ln], session, groupId });
       }
       setJustPlaced({
         client: client.trim(),
@@ -342,22 +363,29 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
 
           <Card>
             <SectionLabel>Your recent orders</SectionLabel>
-            {myOrders.length === 0 ? (
+            {myOrderGroups.length === 0 ? (
               <p className="text-sm text-[var(--basalt)]/50">Orders you place will show up here with their status.</p>
             ) : (
               <div className="space-y-3">
-                {myOrders.map((o) => (
-                  <div key={o.id} className="text-sm border-b border-[var(--basalt)]/5 pb-2 last:border-0 last:pb-0">
+                {myOrderGroups.map((g) => (
+                  <div key={g.key} className="text-sm border-b border-[var(--basalt)]/5 pb-2 last:border-0 last:pb-0">
                     <div className="flex items-center justify-between gap-2">
-                      <button onClick={() => setDetailsOrder(o)} className="font-medium truncate flex items-center gap-1 hover:underline">
-                        {orderLabel(o)} <Info size={11} className="text-[var(--basalt)]/30 shrink-0" />
-                      </button>
-                      <StatusBadge status={o.status} />
+                      <span className="font-medium truncate">{orderLabel(g.orders[0])}</span>
+                      <span className="text-xs text-[var(--basalt)]/40 shrink-0">{new Date(g.placedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                     </div>
-                    <div className="text-xs text-[var(--basalt)]/50 mt-0.5">{o.items.map((it) => `${it.qty}× ${it.name}`).join(", ")}</div>
-                    <div className="text-xs text-[var(--basalt)]/40 mt-0.5">
-                      RWF {fmt(o.total)} · {new Date(o.placedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    <div className="space-y-1 mt-1">
+                      {g.orders.map((o) => (
+                        <button key={o.id} onClick={() => setDetailsOrder(o)} className="w-full flex items-center justify-between gap-2 text-xs hover:underline text-left">
+                          <span className="flex items-center gap-1.5 text-[var(--basalt)]/60 truncate">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: LINES[o.line].color }} />
+                            {o.items.map((it) => `${it.qty}× ${it.name}`).join(", ")}
+                            <Info size={10} className="text-[var(--basalt)]/30 shrink-0" />
+                          </span>
+                          <StatusBadge status={o.status} />
+                        </button>
+                      ))}
                     </div>
+                    <div className="text-xs text-[var(--basalt)]/40 mt-1">RWF {fmt(g.total)}</div>
                   </div>
                 ))}
               </div>

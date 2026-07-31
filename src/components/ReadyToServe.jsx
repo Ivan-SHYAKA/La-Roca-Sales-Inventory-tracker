@@ -8,16 +8,20 @@ import { serveOrder } from "../lib/data";
 
 // A table's order can be split across lines (a burger from the kitchen, a cappuccino from
 // the barista) even though the waiter thinks of it as one ticket — so this groups them back
-// by table for the "I delivered this" confirmation, the same way BillingBoard groups them
-// for payment. Marking served is one action per table, not one per department.
-function groupByTable(orders) {
+// by groupId (set at placement) for display, falling back to table number alone for orders
+// placed before that column existed. Serving is per line, not per group: each line gets its
+// own "Mark served" once it's ready, and the group card stays visible — showing which lines
+// are still out — until every line in it has been served.
+function groupOrders(orders) {
   const used = new Set();
   const groups = [];
   orders.forEach((o) => {
     if (used.has(o.id)) return;
-    const siblings = o.tableNumber
-      ? orders.filter((x) => !used.has(x.id) && x.tableNumber === o.tableNumber)
-      : [o];
+    const siblings = o.groupId
+      ? orders.filter((x) => !used.has(x.id) && x.groupId === o.groupId)
+      : o.tableNumber
+        ? orders.filter((x) => !used.has(x.id) && !x.groupId && x.tableNumber === o.tableNumber)
+        : [o];
     siblings.forEach((s) => used.add(s.id));
     groups.push(siblings);
   });
@@ -29,28 +33,20 @@ function groupByTable(orders) {
 // waiter who placed it confirms they delivered it. That confirmation is what flips the
 // order to "served" and is what BillingBoard/sales sees update live.
 export function ReadyToServe({ orders, session, refresh, onError, flags = [] }) {
-  const [confirming, setConfirming] = useState(null);
+  const [confirming, setConfirming] = useState(null); // a single line-order, not the whole group
   const [detailsOrder, setDetailsOrder] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const myActive = orders.filter((o) => o.placedById === session.id && (o.status === "placed" || o.status === "ready"));
-  const groups = groupByTable(myActive)
+  const groups = groupOrders(myActive)
     .filter((g) => g.some((o) => o.status === "ready"))
-    .map((g) => ({
-      key: g.map((o) => o.id).sort().join("-"),
-      orders: g,
-      allReady: g.every((o) => o.status === "ready"),
-      pendingLines: g.filter((o) => o.status !== "ready").map((o) => LINES[o.line].label),
-      readyAt: g.map((o) => o.readyAt).filter(Boolean).sort()[0],
-      items: g.flatMap((o) => o.items.map((it) => ({ ...it, line: o.line }))),
-      lines: [...new Set(g.map((o) => o.line))],
-    }))
-    .sort((a, b) => new Date(a.readyAt) - new Date(b.readyAt));
+    .map((g) => ({ key: g.map((o) => o.id).sort().join("-"), orders: g }))
+    .sort((a, b) => new Date(a.orders[0].placedAt) - new Date(b.orders[0].placedAt));
 
   const confirmServed = async () => {
     setBusy(true);
     try {
-      for (const o of confirming.orders) await serveOrder(o.id, session);
+      await serveOrder(confirming.id, session);
       setConfirming(null);
       await refresh();
     } catch (e) {
@@ -64,7 +60,7 @@ export function ReadyToServe({ orders, session, refresh, onError, flags = [] }) 
     <div className="space-y-6">
       {confirming && (
         <ConfirmModal title="Confirm served?" confirmLabel="Yes, delivered" busy={busy} onConfirm={confirmServed} onClose={() => setConfirming(null)}>
-          <p className="text-sm">Confirm you've delivered this order to {orderLabel({ ...confirming.orders[0] })}:</p>
+          <p className="text-sm">Confirm you've delivered this to {orderLabel(confirming)}:</p>
           <p className="text-xs text-[var(--basalt)]/60 mt-1">{confirming.items.map((it) => `${it.qty}× ${it.name}`).join(", ")}</p>
         </ConfirmModal>
       )}
@@ -76,25 +72,34 @@ export function ReadyToServe({ orders, session, refresh, onError, flags = [] }) 
         ) : (
           <div className="space-y-3">
             {groups.map((g) => {
-              const waiting = mins(Date.now() - new Date(g.readyAt).getTime());
-              const mixed = g.lines.length > 1;
+              const mixed = new Set(g.orders.map((o) => o.line)).size > 1;
               return (
-                <div key={g.key} className="flex items-center justify-between p-3 rounded border border-[var(--basalt)]/10">
-                  <div>
-                    <button onClick={() => setDetailsOrder(g.orders[0])} className="font-medium text-sm flex items-center gap-1 hover:underline">
-                      {orderLabel(g.orders[0])} <Info size={11} className="text-[var(--basalt)]/30" />
-                      <span className="text-xs text-[var(--basalt)]/40 font-normal">· {g.lines.map((l) => LINES[l].label).join(" + ")}</span>
-                    </button>
-                    <div className="text-xs text-[var(--basalt)]/60 mt-1">
-                      {g.items.map((it) => mixed ? `${it.qty}× ${it.name} (${LINES[it.line].label})` : `${it.qty}× ${it.name}`).join(", ")}
-                    </div>
-                    {g.allReady ? (
-                      <div className="text-xs mt-1 flex items-center gap-1 text-[var(--basalt)]/60"><Clock size={12} /> Ready {waiting} min ago</div>
-                    ) : (
-                      <div className="text-xs mt-1 flex items-center gap-1" style={{ color: "var(--gold)" }}><Clock size={12} /> Still waiting on: {g.pendingLines.join(", ")}</div>
-                    )}
+                <div key={g.key} className="p-3 rounded border border-[var(--basalt)]/10">
+                  <div className="font-medium text-sm flex items-center gap-1.5 mb-2">
+                    {orderLabel(g.orders[0])}
+                    {mixed && <span className="text-xs text-[var(--basalt)]/40 font-normal">· {[...new Set(g.orders.map((o) => LINES[o.line].label))].join(" + ")}</span>}
                   </div>
-                  <PrimaryBtn color="var(--moss)" disabled={!g.allReady} onClick={() => setConfirming(g)}>Mark served</PrimaryBtn>
+                  <div className="space-y-2">
+                    {g.orders.map((o) => {
+                      const waiting = o.readyAt ? mins(Date.now() - new Date(o.readyAt).getTime()) : null;
+                      return (
+                        <div key={o.id} className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <button onClick={() => setDetailsOrder(o)} className="text-sm flex items-center gap-1.5 hover:underline text-left">
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: LINES[o.line].color }} />
+                              <span className="truncate">{o.items.map((it) => `${it.qty}× ${it.name}`).join(", ")}</span>
+                              <Info size={11} className="text-[var(--basalt)]/30 shrink-0" />
+                            </button>
+                            <div className="text-xs mt-0.5 flex items-center gap-1" style={{ color: o.status === "ready" ? "inherit" : "var(--gold)" }}>
+                              <Clock size={11} />
+                              {o.status === "ready" ? `Ready ${waiting} min ago` : `Still waiting on ${LINES[o.line].label.toLowerCase()}`}
+                            </div>
+                          </div>
+                          <PrimaryBtn color="var(--moss)" disabled={o.status !== "ready"} onClick={() => setConfirming(o)}>Mark served</PrimaryBtn>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
