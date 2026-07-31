@@ -5,7 +5,7 @@ import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetch
 import { computeFlags } from "./lib/business";
 import { ROLES, LINES } from "./lib/constants";
 import { orderLabel } from "./lib/format";
-import { playChime } from "./lib/sound";
+import { playChime, playAlert } from "./lib/sound";
 import { SetupAdmin, LoginForm, UsersManager } from "./components/Auth";
 import { Dashboard } from "./components/Dashboard";
 import { MenuManager } from "./components/MenuManager";
@@ -53,11 +53,13 @@ export default function LaRocaSystem() {
 
   // Pop-up notifications (top-right, auto-dismiss + manual close) for both the existing
   // new-order chime and every action failure — replaces the old static inline red banner,
-  // so a failed action is as hard to miss as a new order arriving.
+  // so a failed action is as hard to miss as a new order arriving. Each type gets its own
+  // sound (playAlert vs playChime) so the two are tellable apart without looking up.
   const pushToast = useCallback((message, type = "info") => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setToasts((t) => [...t, { id, message, type }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), type === "error" ? 10000 : 8000);
+    if (type === "error") playAlert(); else playChime();
   }, []);
   const pushError = useCallback((message) => pushToast(message, "error"), [pushToast]);
 
@@ -156,7 +158,6 @@ export default function LaRocaSystem() {
         )
         .forEach((o) => {
           pushToast(`New order — ${orderLabel(o)} (${LINES[o.line].label})`);
-          playChime();
         });
     }
     seenOrderIds.current = new Set(orders.map((o) => o.id));
