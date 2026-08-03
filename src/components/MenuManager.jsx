@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Pencil, Eye, EyeOff } from "lucide-react";
 import { Card, SectionLabel, Input, Select, Badge, PrimaryBtn, ConfirmModal } from "./ui";
 import { ItemPicker } from "./ItemPicker";
@@ -14,6 +14,20 @@ export function MenuManager({ menu, inventory, session, refresh, onError }) {
   const [form, setForm] = useState(emptyForm);
   const [recipe, setRecipe] = useState([]);
   const [editingItem, setEditingItem] = useState(null);
+  const [lineFilter, setLineFilter] = useState("all");
+  const [search, setSearch] = useState("");
+
+  const countByLine = useMemo(() => {
+    const c = {};
+    menu.forEach((m) => { c[m.line] = (c[m.line] || 0) + 1; });
+    return c;
+  }, [menu]);
+
+  const visibleMenu = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = menu.filter((m) => (lineFilter === "all" || m.line === lineFilter) && (!q || m.name.toLowerCase().includes(q)));
+    return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+  }, [menu, lineFilter, search]);
 
   useEffect(() => {
     const d = draftGet(draftKey);
@@ -86,11 +100,30 @@ export function MenuManager({ menu, inventory, session, refresh, onError }) {
 
       <Card>
         <SectionLabel>Current menu</SectionLabel>
-        {menu.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items yet.</p> : (
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button onClick={() => setLineFilter("all")}
+            className="text-xs px-3 py-1.5 rounded-full font-medium border"
+            style={lineFilter === "all"
+              ? { background: "var(--basalt)", color: "white", borderColor: "var(--basalt)" }
+              : { background: "transparent", color: "var(--basalt)", borderColor: "rgba(38,34,29,0.15)" }}>
+            All ({menu.length})
+          </button>
+          {Object.entries(LINES).map(([key, l]) => (
+            <button key={key} onClick={() => setLineFilter(key)}
+              className="text-xs px-3 py-1.5 rounded-full font-medium border"
+              style={lineFilter === key
+                ? { background: l.color, color: "white", borderColor: l.color }
+                : { background: l.color + "11", color: l.color, borderColor: l.color + "44" }}>
+              {l.label} ({countByLine[key] || 0})
+            </button>
+          ))}
+        </div>
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search menu…" className="max-w-xs mb-4" />
+        {visibleMenu.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items match.</p> : (
           <table className="w-full text-sm">
             <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10"><th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Line</th><th className="py-2 pr-3">Price</th><th className="py-2 pr-3">Prep</th><th className="py-2 pr-3">Recipe</th><th className="py-2 pr-3">Visible to waiters</th><th></th></tr></thead>
             <tbody>
-              {menu.map((m) => (
+              {visibleMenu.map((m) => (
                 <tr key={m.id} className={`border-b border-[var(--basalt)]/5 ${m.active === false ? "opacity-50" : ""}`}>
                   <td className="py-2 pr-3">{m.name}</td>
                   <td className="py-2 pr-3"><Badge color={LINES[m.line].color}>{LINES[m.line].label}</Badge></td>
@@ -155,9 +188,8 @@ function EditMenuItemModal({ item, inventory, onClose, onSaved, onError }) {
         <div className="text-xs text-[var(--basalt)]/60 mb-2">Recipe (ingredients consumed per unit sold)</div>
         {recipe.map((r, i) => (
           <div key={i} className="flex gap-2 mb-2 items-center">
-            <Select value={r.invId} onChange={(e) => updateRow(i, { invId: e.target.value })}>
-              {inventory.map((inv) => <option key={inv.id} value={inv.id}>{inv.name} ({inv.unit})</option>)}
-            </Select>
+            <ItemPicker items={inventory} value={r.invId} onChange={(invId) => updateRow(i, { invId })}
+              getLabel={(inv) => `${inv.name} (${inv.unit})`} placeholder="Search ingredient…" className="flex-1" />
             <Input type="number" placeholder="qty per unit" value={r.qty} onChange={(e) => updateRow(i, { qty: e.target.value })} />
             <button onClick={() => removeRow(i)}><Trash2 size={14} className="text-[var(--basalt)]/40" /></button>
           </div>

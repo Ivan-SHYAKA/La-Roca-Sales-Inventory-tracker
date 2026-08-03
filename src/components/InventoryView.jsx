@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { Card, SectionLabel, Badge } from "./ui";
+import { Card, SectionLabel, Badge, Input } from "./ui";
 import { LINES } from "../lib/constants";
 import { reconciliation } from "../lib/business";
 import { fmt } from "../lib/format";
 
 export function InventoryView({ inventory, orders, menu, stockEvents }) {
   const [lineFilter, setLineFilter] = useState("all");
+  const [search, setSearch] = useState("");
   const recon = reconciliation(inventory, orders, menu, stockEvents, 30);
 
   const countByLine = useMemo(() => {
@@ -16,15 +17,16 @@ export function InventoryView({ inventory, orders, menu, stockEvents }) {
   }, [inventory]);
 
   const visibleInventory = useMemo(() => {
-    const filtered = lineFilter === "all" ? inventory : inventory.filter((i) => i.line === lineFilter);
+    const q = search.trim().toLowerCase();
+    const filtered = inventory.filter((i) => (lineFilter === "all" || i.line === lineFilter) && (!q || i.name.toLowerCase().includes(q)));
     return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
-  }, [inventory, lineFilter]);
+  }, [inventory, lineFilter, search]);
 
   return (
     <div className="space-y-6">
       <Card>
         <SectionLabel>Inventory</SectionLabel>
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex flex-wrap gap-2 mb-3">
           <button onClick={() => setLineFilter("all")}
             className="text-xs px-3 py-1.5 rounded-full font-medium border"
             style={lineFilter === "all"
@@ -42,6 +44,7 @@ export function InventoryView({ inventory, orders, menu, stockEvents }) {
             </button>
           ))}
         </div>
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search inventory…" className="max-w-xs mb-4" />
         {visibleInventory.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items yet.</p> : (
           <table className="w-full text-sm">
             <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10"><th className="py-2 pr-3">Item</th><th className="py-2 pr-3">Line</th><th className="py-2 pr-3">Quantity</th><th className="py-2 pr-3">Reorder at</th><th className="py-2 pr-3">Value</th></tr></thead>

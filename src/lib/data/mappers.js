@@ -95,6 +95,9 @@ export function mapStorekeeperOrders(rows) {
       line: r.line,
       status: r.status,
       servedAt: r.served_at,
+      placedAt: r.placed_at,
+      placedBy: r.placed_by_name || "",
+      groupId: r.group_id || null,
       items: [],
     });
     o.items.push({ menuId: r.menu_item_id, name: r.item_name, qty: Number(r.qty) || 0 });

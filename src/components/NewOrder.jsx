@@ -6,6 +6,7 @@ import { LINES, TABLE_SECTIONS } from "../lib/constants";
 import { fmt, orderLabel } from "../lib/format";
 import { draftGet, draftSet, draftClear } from "../lib/draft";
 import { placeOrder, checkOrderItemAvailability, insertStockAlert } from "../lib/data";
+import { groupOrdersByGroupId } from "../lib/business";
 
 const TABLE_LABEL = { restaurant: "Table number", coffeeshop: "Table number", accommodations: "Room number" };
 
@@ -61,15 +62,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
   // of once per department.
   const myOrderGroups = useMemo(() => {
     const mine = (orders || []).filter((o) => o.placedById === session.id);
-    const used = new Set();
-    const groups = [];
-    mine.forEach((o) => {
-      if (used.has(o.id)) return;
-      const siblings = o.groupId ? mine.filter((x) => !used.has(x.id) && x.groupId === o.groupId) : [o];
-      siblings.forEach((s) => used.add(s.id));
-      groups.push(siblings);
-    });
-    return groups
+    return groupOrdersByGroupId(mine)
       .map((g) => ({
         key: g.map((o) => o.id).sort().join("-"),
         orders: g,

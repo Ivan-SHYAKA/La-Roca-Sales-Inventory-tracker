@@ -13,6 +13,26 @@ export function estimateServeMinutes(order, orders) {
   const aheadPrep = ahead.reduce((s, o) => s + orderPrepMinutes(o), 0);
   return Math.round(aheadPrep / DEPT_CAPACITY[dept] + orderPrepMinutes(order));
 }
+// A table's order can be split across lines (a burger from the kitchen, a cappuccino from
+// the barista) even though the waiter thinks of it as one ticket — so this groups them back
+// by groupId (set at placement) for display, falling back to table number alone for orders
+// placed before that column existed.
+export function groupOrdersByGroupId(orders) {
+  const used = new Set();
+  const groups = [];
+  orders.forEach((o) => {
+    if (used.has(o.id)) return;
+    const siblings = o.groupId
+      ? orders.filter((x) => !used.has(x.id) && x.groupId === o.groupId)
+      : o.tableNumber
+        ? orders.filter((x) => !used.has(x.id) && !x.groupId && x.tableNumber === o.tableNumber)
+        : [o];
+    siblings.forEach((s) => used.add(s.id));
+    groups.push(siblings);
+  });
+  return groups;
+}
+
 export function computeFlags(orders) {
   const t = Date.now();
   const flags = [];
@@ -62,24 +82,6 @@ export function dailyItemLedger(inventory, stockEvents, date) {
     const outQty = Object.values(outByReason).reduce((s, v) => s + v, 0);
     return { id: inv.id, name: inv.name, unit: inv.unit, category: inv.category, reorderLevel: inv.reorderLevel, opening, in: inQty, out: outQty, outByReason, closing: Math.max(0, opening + inQty - outQty) };
   });
-}
-
-// Manager/admin-only: the system's own real-time deduction ledger for the day — every
-// stock_events row the order-placement trigger auto-generated (source='auto_deduction'),
-// which reflects actual usage at the moment each order was placed, not just what a
-// storekeeper separately claims. Grouped per item, same shape as dailyItemLedger's rows
-// so the two can render side by side.
-export function autoDeductedUsageForDay(inventory, stockEvents, date) {
-  const [dayStart, dayEnd] = dayBounds(date);
-  const today = stockEvents.filter((e) => {
-    const t = new Date(e.date).getTime();
-    return e.source === "auto_deduction" && e.type === "out" && t >= dayStart && t < dayEnd;
-  });
-  const byItem = {};
-  today.forEach((e) => { byItem[e.invId] = (byItem[e.invId] || 0) + e.quantity; });
-  return inventory
-    .map((inv) => ({ id: inv.id, name: inv.name, unit: inv.unit, category: inv.category, autoDeducted: byItem[inv.id] || 0 }))
-    .filter((r) => r.autoDeducted > 0);
 }
 
 // The system's own calculation for that same day: recipe-expected usage from served/billed orders.
@@ -135,6 +137,40 @@ export function computeStorekeeperAlerts(orders, menu, inventory) {
       severity: "medium",
       msg: `${orderLabel(x.order)}'s order needs: ${x.ingredients.map((i) => `${i.qty} ${i.unit} ${i.name}`).join(", ")}.`,
     }));
+}
+
+// The storekeeper's persistent, by-date reference log — unlike computeStorekeeperAlerts
+// (which only shows currently-"placed" orders, so it clears the moment an order moves on),
+// this covers every order placed on the given day regardless of its current status, so it
+// can be looked back on for reconciliation after the fact. Grouped by groupId so a table's
+// mixed restaurant+coffee-shop cart shows as the single order the waiter placed, not once
+// per line — matching how waiters already see their own orders.
+export function ordersForStorekeeperLog(orders, menu, inventory, date) {
+  const [dayStart, dayEnd] = dayBounds(date);
+  const dayOrders = orders.filter((o) => {
+    const t = new Date(o.placedAt).getTime();
+    return t >= dayStart && t < dayEnd;
+  });
+  return groupOrdersByGroupId(dayOrders)
+    .map((g) => {
+      const ingredients = {};
+      g.forEach((o) => ingredientsNeededForOrder(o, menu, inventory).forEach((i) => {
+        const cur = ingredients[i.invId];
+        ingredients[i.invId] = { ...i, qty: (cur?.qty || 0) + i.qty };
+      }));
+      const sorted = [...g].sort((a, b) => new Date(a.placedAt) - new Date(b.placedAt));
+      return {
+        key: g.map((o) => o.id).sort().join("-"),
+        orders: g,
+        placedAt: sorted[0].placedAt,
+        placedBy: [...new Set(g.map((o) => o.placedBy).filter(Boolean))].join(", "),
+        label: orderLabel(sorted[0]),
+        lines: g.map((o) => ({ line: o.line, status: o.status })),
+        ingredients: Object.values(ingredients).sort((a, b) => a.name.localeCompare(b.name)),
+      };
+    })
+    .filter((g) => g.ingredients.length > 0)
+    .sort((a, b) => new Date(a.placedAt) - new Date(b.placedAt));
 }
 
 export function reconciliation(inventory, orders, menu, stockEvents, days) {

@@ -5,28 +5,7 @@ import { OrderDetailsModal } from "./OrderDetails";
 import { LINES } from "../lib/constants";
 import { mins, orderLabel } from "../lib/format";
 import { serveOrder } from "../lib/data";
-
-// A table's order can be split across lines (a burger from the kitchen, a cappuccino from
-// the barista) even though the waiter thinks of it as one ticket — so this groups them back
-// by groupId (set at placement) for display, falling back to table number alone for orders
-// placed before that column existed. Serving is per line, not per group: each line gets its
-// own "Mark served" once it's ready, and the group card stays visible — showing which lines
-// are still out — until every line in it has been served.
-function groupOrders(orders) {
-  const used = new Set();
-  const groups = [];
-  orders.forEach((o) => {
-    if (used.has(o.id)) return;
-    const siblings = o.groupId
-      ? orders.filter((x) => !used.has(x.id) && x.groupId === o.groupId)
-      : o.tableNumber
-        ? orders.filter((x) => !used.has(x.id) && !x.groupId && x.tableNumber === o.tableNumber)
-        : [o];
-    siblings.forEach((s) => used.add(s.id));
-    groups.push(siblings);
-  });
-  return groups;
-}
+import { groupOrdersByGroupId } from "../lib/business";
 
 // The waiter's own acknowledgement step: kitchen/barista marking an order "ready" only
 // means it's sitting on the pass — it isn't actually in front of the guest until the
@@ -37,8 +16,11 @@ export function ReadyToServe({ orders, session, refresh, onError, flags = [] }) 
   const [detailsOrder, setDetailsOrder] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  // Serving is per line, not per group: each line gets its own "Mark served" once it's
+  // ready, and the group card stays visible — showing which lines are still out — until
+  // every line in it has been served.
   const myActive = orders.filter((o) => o.placedById === session.id && (o.status === "placed" || o.status === "ready"));
-  const groups = groupOrders(myActive)
+  const groups = groupOrdersByGroupId(myActive)
     .filter((g) => g.some((o) => o.status === "ready"))
     .map((g) => ({ key: g.map((o) => o.id).sort().join("-"), orders: g }))
     .sort((a, b) => new Date(a.orders[0].placedAt) - new Date(b.orders[0].placedAt));
