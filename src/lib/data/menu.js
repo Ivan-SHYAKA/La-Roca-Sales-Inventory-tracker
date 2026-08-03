@@ -58,3 +58,7 @@ export async function removeMenuItem(id) {
   const { error } = await supabase.from("menu_items").delete().eq("id", id);
   check(error);
 }
+export async function setMenuItemActive(id, active) {
+  const { error } = await supabase.from("menu_items").update({ active }).eq("id", id);
+  check(error);
+}

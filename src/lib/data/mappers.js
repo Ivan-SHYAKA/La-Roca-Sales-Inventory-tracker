@@ -50,6 +50,7 @@ export function mapMenuItem(row) {
     line: row.line,
     price: Number(row.price) || 0,
     prepMinutes: Number(row.prep_minutes) || 0,
+    active: row.active !== false,
     recipe: (row.recipe_ingredients || []).map((r) => ({ invId: r.inventory_id, qty: Number(r.qty_per_unit) || 0 })),
   };
 }

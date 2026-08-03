@@ -37,7 +37,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
 
   const availableItems = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return menu.filter((m) => m.line === line && (!q || m.name.toLowerCase().includes(q)));
+    return menu.filter((m) => m.line === line && m.active !== false && (!q || m.name.toLowerCase().includes(q)));
   }, [menu, line, search]);
 
   const cartQty = (menuId) => cart.find((x) => x.menuId === menuId)?.qty || 0;

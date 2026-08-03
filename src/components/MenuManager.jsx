@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, Eye, EyeOff } from "lucide-react";
 import { Card, SectionLabel, Input, Select, Badge, PrimaryBtn, ConfirmModal } from "./ui";
 import { ItemPicker } from "./ItemPicker";
 import { LINES } from "../lib/constants";
 import { fmt } from "../lib/format";
 import { draftGet, draftSet, draftClear } from "../lib/draft";
-import { addMenuItem, updateMenuItem, removeMenuItem } from "../lib/data";
+import { addMenuItem, updateMenuItem, removeMenuItem, setMenuItemActive } from "../lib/data";
 
 const emptyForm = { name: "", line: "restaurant", price: "", prepMinutes: "" };
 
@@ -41,6 +41,14 @@ export function MenuManager({ menu, inventory, session, refresh, onError }) {
       await refresh();
     } catch (e) {
       onError?.(e.message || "Couldn't remove the menu item — check your connection and try again.");
+    }
+  };
+  const toggleActive = async (m) => {
+    try {
+      await setMenuItemActive(m.id, m.active === false);
+      await refresh();
+    } catch (e) {
+      onError?.(e.message || "Couldn't update visibility — check your connection and try again.");
     }
   };
 
@@ -80,15 +88,23 @@ export function MenuManager({ menu, inventory, session, refresh, onError }) {
         <SectionLabel>Current menu</SectionLabel>
         {menu.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items yet.</p> : (
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10"><th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Line</th><th className="py-2 pr-3">Price</th><th className="py-2 pr-3">Prep</th><th className="py-2 pr-3">Recipe</th><th></th></tr></thead>
+            <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10"><th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Line</th><th className="py-2 pr-3">Price</th><th className="py-2 pr-3">Prep</th><th className="py-2 pr-3">Recipe</th><th className="py-2 pr-3">Visible to waiters</th><th></th></tr></thead>
             <tbody>
               {menu.map((m) => (
-                <tr key={m.id} className="border-b border-[var(--basalt)]/5">
+                <tr key={m.id} className={`border-b border-[var(--basalt)]/5 ${m.active === false ? "opacity-50" : ""}`}>
                   <td className="py-2 pr-3">{m.name}</td>
                   <td className="py-2 pr-3"><Badge color={LINES[m.line].color}>{LINES[m.line].label}</Badge></td>
                   <td className="py-2 pr-3 font-mono text-xs">RWF {fmt(m.price)}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{m.prepMinutes}m</td>
                   <td className="py-2 pr-3 text-xs text-[var(--basalt)]/60">{(m.recipe || []).length} ingredient(s)</td>
+                  <td className="py-2 pr-3">
+                    <button onClick={() => toggleActive(m)} className="flex items-center gap-1 text-xs"
+                      aria-label={m.active === false ? `Show ${m.name} to waiters` : `Hide ${m.name} from waiters`}>
+                      {m.active === false
+                        ? <><EyeOff size={14} className="text-[var(--basalt)]/40" /><span className="text-[var(--basalt)]/50">Hidden</span></>
+                        : <><Eye size={14} className="text-[var(--moss)]" /><span className="text-[var(--moss)]">Visible</span></>}
+                    </button>
+                  </td>
                   <td className="py-2 flex gap-3">
                     <button onClick={() => setEditingItem(m)} aria-label={`Edit ${m.name}`}><Pencil size={14} className="text-[var(--basalt)]/40 hover:text-[var(--moss)]" /></button>
                     <button onClick={() => remove(m.id)} aria-label={`Delete ${m.name}`}><Trash2 size={14} className="text-[var(--basalt)]/30 hover:text-[var(--ember)]" /></button>
