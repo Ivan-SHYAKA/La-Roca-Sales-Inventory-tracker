@@ -13,6 +13,7 @@ export function mapOrder(row) {
     phone: row.phone || "",
     line: row.line,
     groupId: row.group_id || null,
+    isStaffOrder: row.is_staff_order || false,
     status: row.status,
     total: Number(row.total) || 0,
     placedAt: row.placed_at,
@@ -118,6 +119,20 @@ export function mapStockAlert(row) {
   };
 }
 
+export function mapFixedCost(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    amount: Number(row.amount) || 0,
+    frequency: row.frequency,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    note: row.note || "",
+    createdBy: row.created_by_name || "",
+    createdAt: row.created_at,
+  };
+}
 export function mapNotification(row) {
   return {
     id: row.id,

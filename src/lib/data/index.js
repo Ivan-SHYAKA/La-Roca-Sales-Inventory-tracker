@@ -8,3 +8,4 @@ export * from "./profiles";
 export * from "./realtime";
 export * from "./stockAlerts";
 export * from "./notifications";
+export * from "./fixedCosts";

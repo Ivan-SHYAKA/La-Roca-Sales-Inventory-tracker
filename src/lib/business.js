@@ -173,6 +173,106 @@ export function ordersForStorekeeperLog(orders, menu, inventory, date) {
     .sort((a, b) => new Date(a.placedAt) - new Date(b.placedAt));
 }
 
+// ---------- PERIOD-SCOPED BUSINESS HEALTH (dashboard: revenue, cost, profit/loss) ----------
+function rangeBounds(startDate, endDate) {
+  const s = new Date(startDate);
+  const start = new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime();
+  const e = new Date(endDate);
+  const end = new Date(e.getFullYear(), e.getMonth(), e.getDate()).getTime() + 86400000;
+  return [start, end];
+}
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+// Every calendar day in [startDate, endDate], inclusive on both ends.
+function daysInRange(startDate, endDate) {
+  const [start, end] = rangeBounds(startDate, endDate);
+  const out = [];
+  for (let t = start; t < end; t += 86400000) out.push(toDateStr(new Date(t)));
+  return out;
+}
+
+// Revenue actually billed in the period. Staff personal orders are included in the total
+// (real cash the business took in) but broken out separately so the owner can see how much
+// of it was staff meals at a reduced price rather than full-paying guests.
+export function revenueForPeriod(orders, startDate, endDate) {
+  const [start, end] = rangeBounds(startDate, endDate);
+  const billed = orders.filter((o) => o.status === "billed" && o.billedAt && new Date(o.billedAt).getTime() >= start && new Date(o.billedAt).getTime() < end);
+  const staffOrders = billed.filter((o) => o.isStaffOrder);
+  const guestOrders = billed.filter((o) => !o.isStaffOrder);
+  const lines = ["restaurant", "coffeeshop", "accommodations"];
+  const revenueByLine = lines.map((line) => ({ line, total: billed.filter((o) => o.line === line).reduce((s, o) => s + o.total, 0) }));
+  const byDay = daysInRange(startDate, endDate).map((date) => {
+    const [dStart, dEnd] = rangeBounds(date, date);
+    const total = billed.filter((o) => { const t = new Date(o.billedAt).getTime(); return t >= dStart && t < dEnd; }).reduce((s, o) => s + o.total, 0);
+    return { date, total };
+  });
+  return {
+    total: billed.reduce((s, o) => s + o.total, 0),
+    byLine: revenueByLine,
+    staffOrders: { count: staffOrders.length, total: staffOrders.reduce((s, o) => s + o.total, 0) },
+    guestTotal: guestOrders.reduce((s, o) => s + o.total, 0),
+    byDay,
+  };
+}
+
+// What storekeepers actually recorded as "usage" stock-out, priced at each item's cost —
+// this is the period's real cost of ingredients, as far as anyone has recorded it.
+export function recordedCostForPeriod(inventory, stockEvents, startDate, endDate) {
+  const [start, end] = rangeBounds(startDate, endDate);
+  const invMap = Object.fromEntries(inventory.map((i) => [i.id, i]));
+  const events = stockEvents.filter((e) => e.type === "out" && e.reason === "usage" && (() => { const t = new Date(e.date).getTime(); return t >= start && t < end; })());
+  return events.reduce((s, e) => s + e.quantity * (invMap[e.invId]?.costPerUnit || 0), 0);
+}
+
+// The system's own estimate of ingredient cost, straight from recipes x served/billed
+// orders in the period — the "system calculated" half of the storekeeper-vs-system compare.
+export function expectedCostForPeriod(inventory, orders, menu, startDate, endDate) {
+  const [start, end] = rangeBounds(startDate, endDate);
+  const invMap = Object.fromEntries(inventory.map((i) => [i.id, i]));
+  const periodOrders = orders.filter((o) => ["served", "billed"].includes(o.status) && o.servedAt && (() => { const t = new Date(o.servedAt).getTime(); return t >= start && t < end; })());
+  let cost = 0;
+  periodOrders.forEach((o) => o.items.forEach((it) => {
+    const m = menu.find((mm) => mm.id === it.menuId);
+    (m?.recipe || []).forEach((r) => { cost += r.qty * it.qty * (invMap[r.invId]?.costPerUnit || 0); });
+  }));
+  return cost;
+}
+
+// Fixed costs (salaries, utilities, rent, ...) active during the period. 'monthly' costs
+// count once for every calendar month they overlap -- simple on purpose, not day-prorated.
+export function fixedCostsForPeriod(fixedCosts, startDate, endDate) {
+  const [start, end] = rangeBounds(startDate, endDate);
+  let total = 0;
+  const byCategory = {};
+  fixedCosts.forEach((c) => {
+    const costStart = new Date(c.startDate).getTime();
+    const costEnd = c.endDate ? new Date(c.endDate).getTime() + 86400000 : Infinity;
+    if (costEnd <= start || costStart >= end) return; // no overlap with the period at all
+    let occurrences = 1;
+    if (c.frequency === "monthly") {
+      const overlapStart = new Date(Math.max(costStart, start));
+      const overlapEnd = new Date(Math.min(costEnd, end) - 1);
+      occurrences = (overlapEnd.getFullYear() - overlapStart.getFullYear()) * 12 + (overlapEnd.getMonth() - overlapStart.getMonth()) + 1;
+    }
+    const amount = c.amount * occurrences;
+    total += amount;
+    byCategory[c.category] = (byCategory[c.category] || 0) + amount;
+  });
+  return { total, byCategory };
+}
+
+// The whole picture in one place: revenue in, cost of ingredients actually used out, fixed
+// costs out, what's left over. Deliberately plain -- no separate "gross" vs "net" jargon.
+export function profitLossForPeriod(inventory, orders, menu, stockEvents, fixedCosts, startDate, endDate) {
+  const revenue = revenueForPeriod(orders, startDate, endDate);
+  const recordedCost = recordedCostForPeriod(inventory, stockEvents, startDate, endDate);
+  const expectedCost = expectedCostForPeriod(inventory, orders, menu, startDate, endDate);
+  const fixed = fixedCostsForPeriod(fixedCosts, startDate, endDate);
+  const profit = revenue.total - recordedCost - fixed.total;
+  return { revenue, recordedCost, expectedCost, fixed, profit };
+}
+
 export function reconciliation(inventory, orders, menu, stockEvents, days) {
   const since = Date.now() - days * 86400000;
   const servedOrders = orders.filter((o) => ["served", "billed"].includes(o.status) && new Date(o.servedAt).getTime() >= since);

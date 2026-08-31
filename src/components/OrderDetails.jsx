@@ -12,6 +12,7 @@ export function OrderDetailsModal({ order, onClose }) {
           <SectionLabel>{orderLabel(order)}</SectionLabel>
           <Badge color={LINES[order.line].color}>{LINES[order.line].label}</Badge>
           <StatusBadge status={order.status} />
+          {order.isStaffOrder && <Badge color="var(--gold)">Staff order</Badge>}
         </div>
         {order.client && order.tableNumber && <p className="text-xs text-[var(--basalt)]/50 mb-2">Client: {order.client}</p>}
         {order.phone && <p className="text-xs text-[var(--basalt)]/50 mb-2">Phone: {order.phone}</p>}

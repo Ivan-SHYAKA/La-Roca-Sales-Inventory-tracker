@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Loader2, LogOut } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, fetchMyNotifications, subscribeToChanges } from "./lib/data";
+import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, fetchMyNotifications, fetchFixedCosts, subscribeToChanges } from "./lib/data";
 import { computeFlags } from "./lib/business";
 import { ROLES, LINES } from "./lib/constants";
 import { orderLabel } from "./lib/format";
@@ -19,6 +19,7 @@ import { InventoryView } from "./components/InventoryView";
 import { DailyStockReport } from "./components/DailyStockReport";
 import { StockAlertsBanner } from "./components/StockAlertsBanner";
 import { ActivityLog } from "./components/ActivityLog";
+import { FixedCosts } from "./components/FixedCosts";
 import { ToastStack } from "./components/Toasts";
 import { NotificationCenter } from "./components/NotificationCenter";
 import logo from "./assets/la-roca-logo.svg";
@@ -50,6 +51,7 @@ export default function LaRocaSystem() {
   const [stockEvents, setStockEvents] = useState([]);
   const [users, setUsers] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [fixedCosts, setFixedCosts] = useState([]);
   const [toasts, setToasts] = useState([]);
   const seenOrderIds = useRef(null); // null = "haven't taken a baseline snapshot yet" -> don't alert
 
@@ -72,11 +74,12 @@ export default function LaRocaSystem() {
 
   const loadData = useCallback(async () => {
     try {
-      const [o, so, m, inv, se, sa, u, n] = await Promise.all([
+      const [o, so, m, inv, se, sa, u, n, fc] = await Promise.all([
         fetchOrders(), fetchStorekeeperOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchStockAlerts(), fetchProfiles(),
         session ? fetchMyNotifications(session.id) : Promise.resolve([]),
+        fetchFixedCosts(),
       ]);
-      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u); setNotifications(n);
+      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u); setNotifications(n); setFixedCosts(fc);
     } catch (e) {
       pushError(e.message || "Couldn't load data — check your connection and try again.");
     }
@@ -132,7 +135,7 @@ export default function LaRocaSystem() {
     if (!session) return;
     loadData();
     return subscribeToChanges(
-      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles", "notifications", "notification_acks"],
+      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles", "notifications", "notification_acks", "fixed_costs"],
       loadData
     );
   }, [session?.id, loadData]);
@@ -180,7 +183,7 @@ export default function LaRocaSystem() {
   }
 
   const tabsForRole = {
-    manager: [["dashboard", "Dashboard"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["users", "Users"], ["activity", "My Activity"]],
+    manager: [["dashboard", "Dashboard"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", "Users"], ["activity", "My Activity"]],
     waiter: [["neworder", "Take Order"], ["readytoserve", "Ready to Serve"], ["activity", "My Activity"]],
     sales: [["neworder", "New Order / Booking"], ["readytoserve", "Ready to Serve"], ["checkin", "Check-in"], ["billing", "Orders & Billing"], ["activity", "My Activity"]],
     kitchen: [["kitchenqueue", "Kitchen Queue"], ["activity", "My Activity"]],
@@ -223,8 +226,9 @@ export default function LaRocaSystem() {
         />
       )}
 
-      {tab === "dashboard" && <Dashboard orders={orders} inventory={inventory} stockEvents={stockEvents} menu={menu} flags={flags} />}
+      {tab === "dashboard" && <Dashboard orders={orders} inventory={inventory} stockEvents={stockEvents} menu={menu} flags={flags} fixedCosts={fixedCosts} />}
       {tab === "menu" && <MenuManager menu={menu} inventory={inventory} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "fixedcosts" && <FixedCosts fixedCosts={fixedCosts} session={session} refresh={loadData} onError={pushError} />}
       {tab === "users" && <UsersManager users={users} session={session} refreshUsers={loadData} onError={pushError} />}
       {tab === "billing" && <BillingBoard orders={orders} session={session} refresh={loadData} onError={pushError} />}
       {tab === "neworder" && <NewOrder menu={menu} orders={orders} session={session} refresh={loadData} onError={pushError} flags={flags} />}

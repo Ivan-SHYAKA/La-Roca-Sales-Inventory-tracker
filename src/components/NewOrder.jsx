@@ -22,6 +22,8 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
   const [justPlaced, setJustPlaced] = useState(null);
   const [kiosk, setKiosk] = useState(false);
   const [detailsOrder, setDetailsOrder] = useState(null);
+  const [isStaffOrder, setIsStaffOrder] = useState(false);
+  const [staffTotal, setStaffTotal] = useState("");
 
   // Resume any in-progress order this user was building if the page reloaded (power/internet drop).
   useEffect(() => {
@@ -76,6 +78,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
   const submit = async () => {
     if (!tableNumber.trim()) { onError?.("Enter the table/room number before placing the order."); return; }
     if (cart.length === 0) { onError?.("Add at least one item to the cart before placing the order."); return; }
+    if (isStaffOrder && (!staffTotal || Number(staffTotal) < 0)) { onError?.("Enter the reduced price for this staff order."); return; }
     setBusy(true);
     try {
       // Orders are never rejected for short stock — the DB-side trigger records the
@@ -92,8 +95,14 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
       cart.forEach((x) => { (groups[x.line] ||= []).push(x); });
       const lineKeys = Object.keys(groups);
       const groupId = crypto.randomUUID();
+      // A staff order's reduced total is entered once for the whole cart, so when it spans
+      // multiple lines each line gets its proportional share of that reduced total rather
+      // than the full menu price.
+      const reducedTotal = isStaffOrder ? Number(staffTotal) || 0 : null;
       for (const ln of lineKeys) {
-        await placeOrder({ client: client.trim(), tableNumber: tableNumber.trim(), phone: phone.trim(), line: ln, cart: groups[ln], session, groupId });
+        const lineMenuTotal = groups[ln].reduce((s, x) => s + x.price * x.qty, 0);
+        const lineStaffTotal = reducedTotal == null ? null : Math.round(reducedTotal * (lineMenuTotal / total));
+        await placeOrder({ client: client.trim(), tableNumber: tableNumber.trim(), phone: phone.trim(), line: ln, cart: groups[ln], session, groupId, isStaffOrder, staffTotal: lineStaffTotal });
       }
       setJustPlaced({
         client: client.trim(),
@@ -107,6 +116,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
         })),
       });
       setClient(""); setTableNumber(""); setPhone(""); setCart([]); setSearch(""); draftClear(draftKey);
+      setIsStaffOrder(false); setStaffTotal("");
       setKiosk(false); // hand the tablet back to staff view once the client's order is in
       await refresh();
     } catch (e) {
@@ -321,6 +331,17 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
                   </div>
                 ))}
                 <div className="border-t border-[var(--basalt)]/10 pt-2 flex justify-between font-semibold"><span>Total</span><span className="font-mono">RWF {fmt(total)}</span></div>
+                <label className="flex items-center gap-2 text-xs text-[var(--basalt)]/70 pt-1">
+                  <input type="checkbox" checked={isStaffOrder}
+                    onChange={(e) => { setIsStaffOrder(e.target.checked); if (e.target.checked && !staffTotal) setStaffTotal(String(total)); }} />
+                  Staff personal order (reduced price)
+                </label>
+                {isStaffOrder && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[var(--basalt)]/60 shrink-0">Reduced total (RWF)</span>
+                    <Input type="number" value={staffTotal} onChange={(e) => setStaffTotal(e.target.value)} className="mt-0" />
+                  </div>
+                )}
               </div>
             )}
             <div className="flex justify-end mt-4">

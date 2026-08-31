@@ -21,8 +21,12 @@ export async function fetchStorekeeperOrders() {
 }
 
 // ---------- ORDERS ----------
-export async function placeOrder({ client, tableNumber, phone, line, cart, session, groupId }) {
-  const total = cart.reduce((s, x) => s + x.price * x.qty, 0);
+export async function placeOrder({ client, tableNumber, phone, line, cart, session, groupId, isStaffOrder, staffTotal }) {
+  const menuTotal = cart.reduce((s, x) => s + x.price * x.qty, 0);
+  // A staff personal order can be recorded at whatever reduced price the waiter/sales
+  // enters (e.g. at cost) instead of the normal menu price -- staffTotal is that
+  // per-line share, already split proportionally by the caller across mixed-line carts.
+  const total = isStaffOrder && staffTotal != null ? staffTotal : menuTotal;
   // Generate the id client-side and skip `.select()` on the insert: waiters can
   // insert orders but have no SELECT policy on orders (insert-only, per spec), and
   // PostgREST's RETURNING (triggered by .select()) is itself gated by the SELECT
@@ -39,6 +43,7 @@ export async function placeOrder({ client, tableNumber, phone, line, cart, sessi
     placed_by: session.id,
     placed_by_name: session.name,
     group_id: groupId || null,
+    is_staff_order: !!isStaffOrder,
   });
   check(error);
   const { error: itemsError } = await supabase.from("order_items").insert(
