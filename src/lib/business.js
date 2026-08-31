@@ -1,5 +1,5 @@
 import { DEPT_CAPACITY, DEPT_FOR_LINE } from "./constants";
-import { mins, orderLabel } from "./format";
+import { mins, orderLabel, humanizeDuration } from "./format";
 
 // ---------- ORDER LOGIC (unchanged from the prototype) ----------
 export function orderPrepMinutes(order) {
@@ -42,16 +42,16 @@ export function computeFlags(orders) {
       if (dept === "kitchen" || dept === "barista") {
         const eta = estimateServeMinutes(o, orders);
         const elapsed = mins(t - new Date(o.placedAt).getTime());
-        if (elapsed > eta + 15) flags.push({ id: o.id + "-late", role: dept, severity: elapsed > eta + 30 ? "high" : "medium", msg: `${orderLabel(o)}'s order is ${elapsed - eta} min past its estimated ${dept} time.` });
+        if (elapsed > eta + 15) flags.push({ id: o.id + "-late", role: dept, severity: elapsed > eta + 30 ? "high" : "medium", msg: `${orderLabel(o)}'s order is ${humanizeDuration((elapsed - eta) * 60000)} past its estimated ${dept} time.` });
       }
     }
     if (o.status === "ready") {
       const elapsed = mins(t - new Date(o.readyAt).getTime());
-      if (elapsed > 10) flags.push({ id: o.id + "-unserved", role: "waiter", severity: elapsed > 20 ? "high" : "medium", msg: `${orderLabel(o)}'s order has been ready ${elapsed} min but hasn't been served yet.` });
+      if (elapsed > 10) flags.push({ id: o.id + "-unserved", role: "waiter", severity: elapsed > 20 ? "high" : "medium", msg: `${orderLabel(o)}'s order has been ready ${humanizeDuration(elapsed * 60000)} but hasn't been served yet.` });
     }
     if (o.status === "served") {
       const elapsed = mins(t - new Date(o.servedAt).getTime());
-      if (elapsed > 20) flags.push({ id: o.id + "-unbilled", role: "sales", severity: elapsed > 45 ? "high" : "medium", msg: `Order for ${orderLabel(o)} was served ${elapsed} min ago but hasn't been billed.` });
+      if (elapsed > 20) flags.push({ id: o.id + "-unbilled", role: "sales", severity: elapsed > 45 ? "high" : "medium", msg: `Order for ${orderLabel(o)} was served ${humanizeDuration(elapsed * 60000)} ago but hasn't been billed.` });
     }
   });
   return flags;

@@ -3,7 +3,7 @@ import { Clock, CheckCircle2, Info } from "lucide-react";
 import { Card, SectionLabel, PrimaryBtn, ConfirmModal, FlagsPanel } from "./ui";
 import { OrderDetailsModal } from "./OrderDetails";
 import { estimateServeMinutes } from "../lib/business";
-import { mins, orderLabel } from "../lib/format";
+import { mins, orderLabel, humanizeDuration } from "../lib/format";
 import { markOrderReady } from "../lib/data";
 
 export function DeptQueue({ dept, line, orders, session, refresh, onError, flags = [] }) {
@@ -50,7 +50,7 @@ export function DeptQueue({ dept, line, orders, session, refresh, onError, flags
                     </button>
                     <div className="text-xs text-[var(--basalt)]/60 mt-1">{o.items.map((it) => `${it.qty}× ${it.name}`).join(", ")}</div>
                     <div className="text-xs mt-1 flex items-center gap-1" style={{ color: late ? "var(--ember)" : "var(--basalt)99" }}>
-                      <Clock size={12} /> Estimated {eta} min · elapsed {elapsed} min {late && "— running late"}
+                      <Clock size={12} /> Estimated {humanizeDuration(eta * 60000)} · elapsed {humanizeDuration(elapsed * 60000)} {late && "— running late"}
                     </div>
                   </div>
                   <PrimaryBtn color="var(--gold)" onClick={() => setConfirming(o)}>Mark {dept === "kitchen" ? "cooked" : "ready"}</PrimaryBtn>

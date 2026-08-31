@@ -52,11 +52,10 @@ export async function placeOrder({ client, tableNumber, phone, line, cart, sessi
     }))
   );
   if (itemsError) {
-    // Most commonly: the block_order_item_if_short trigger rejected one of the rows
-    // (insufficient stock) — the order row above already committed as a separate
-    // request, so without this it'd sit in every queue as a real, itemless "placed"
-    // order. Best-effort: if this cleanup itself fails, still surface the original
-    // error rather than the cleanup's.
+    // The order row above already committed as a separate request, so if this insert
+    // fails for any reason (network drop, RLS, etc.) it'd otherwise sit in every queue
+    // as a real, itemless "placed" order. Best-effort: if this cleanup itself fails,
+    // still surface the original error rather than the cleanup's.
     await supabase.rpc("delete_empty_order", { p_order_id: orderId }).catch(() => {});
     check(itemsError);
   }

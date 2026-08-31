@@ -5,7 +5,7 @@ import { OrderDetailsModal } from "./OrderDetails";
 import { LINES, TABLE_SECTIONS } from "../lib/constants";
 import { fmt, orderLabel } from "../lib/format";
 import { draftGet, draftSet, draftClear } from "../lib/draft";
-import { placeOrder, checkOrderItemAvailability, insertStockAlert } from "../lib/data";
+import { placeOrder } from "../lib/data";
 import { groupOrdersByGroupId } from "../lib/business";
 
 const TABLE_LABEL = { restaurant: "Table number", coffeeshop: "Table number", accommodations: "Room number" };
@@ -78,27 +78,9 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
     if (cart.length === 0) { onError?.("Add at least one item to the cart before placing the order."); return; }
     setBusy(true);
     try {
-      // Check every cart line's ingredient availability before touching the DB at all —
-      // catches the common case with a friendly message instead of a raw insert failure.
-      // The DB-level trigger (block_order_item_if_short) is still the real safety net for
-      // the rare case where stock changes between this check and the actual insert.
-      const shortagesByLine = await Promise.all(cart.map(async (x) => {
-        const rows = await checkOrderItemAvailability(x.menuId, x.qty);
-        return rows.map((r) => ({ ...r, dishName: x.name, menuId: x.menuId }));
-      }));
-      const shortages = shortagesByLine.flat();
-      if (shortages.length > 0) {
-        const summary = shortages.map((s) => `${s.name} for ${s.dishName} (need ${s.needed} ${s.unit}, have ${s.available} ${s.unit})`).join("; ");
-        onError?.(`Can't place this order — not enough stock: ${summary}`);
-        await Promise.all(shortages.map((s) => insertStockAlert({
-          inventoryId: s.inventory_id,
-          menuItemId: s.menuId,
-          message: `${s.name} short for ${s.dishName} (need ${s.needed} ${s.unit}, have ${s.available} ${s.unit}).`,
-          severity: "blocked_order",
-        }).catch(() => {})));
-        return;
-      }
-
+      // Orders are never rejected for short stock — the DB-side trigger records the
+      // shortage and notifies the manager, the relevant department, and the storekeeper
+      // instead of blocking the insert. See notify_order_item_if_short (migration 0016).
       // The kitchen/barista/reception queues each route by a single order.line, so a cart
       // mixing categories (e.g. a burger + a cappuccino) becomes one order per line here —
       // all sharing the same table/client — rather than trying to make one order serve
@@ -128,15 +110,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
       setKiosk(false); // hand the tablet back to staff view once the client's order is in
       await refresh();
     } catch (e) {
-      if (e.code === "P0001") {
-        // The pre-check above passed but stock changed before the insert landed (a real
-        // concurrent order) — the DB trigger caught it. orderId's already been cleaned up
-        // by placeOrder itself; this is just surfacing it the same way as a pre-check miss.
-        onError?.(`Can't place this order — ${e.message}`);
-        await insertStockAlert({ message: e.message, severity: "blocked_order" }).catch(() => {});
-      } else {
-        onError?.(e.message || "Couldn't place the order — check your connection and try again.");
-      }
+      onError?.(e.message || "Couldn't place the order — check your connection and try again.");
     } finally {
       setBusy(false);
     }

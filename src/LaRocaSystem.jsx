@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Loader2, LogOut } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, subscribeToChanges } from "./lib/data";
+import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, fetchMyNotifications, subscribeToChanges } from "./lib/data";
 import { computeFlags } from "./lib/business";
 import { ROLES, LINES } from "./lib/constants";
 import { orderLabel } from "./lib/format";
@@ -20,6 +20,7 @@ import { DailyStockReport } from "./components/DailyStockReport";
 import { StockAlertsBanner } from "./components/StockAlertsBanner";
 import { ActivityLog } from "./components/ActivityLog";
 import { ToastStack } from "./components/Toasts";
+import { NotificationCenter } from "./components/NotificationCenter";
 import logo from "./assets/la-roca-logo.svg";
 
 const WRAPPER_STYLE = {
@@ -48,6 +49,7 @@ export default function LaRocaSystem() {
   const [inventory, setInventory] = useState([]);
   const [stockEvents, setStockEvents] = useState([]);
   const [users, setUsers] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [toasts, setToasts] = useState([]);
   const seenOrderIds = useRef(null); // null = "haven't taken a baseline snapshot yet" -> don't alert
 
@@ -70,14 +72,15 @@ export default function LaRocaSystem() {
 
   const loadData = useCallback(async () => {
     try {
-      const [o, so, m, inv, se, sa, u] = await Promise.all([
+      const [o, so, m, inv, se, sa, u, n] = await Promise.all([
         fetchOrders(), fetchStorekeeperOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchStockAlerts(), fetchProfiles(),
+        session ? fetchMyNotifications(session.id) : Promise.resolve([]),
       ]);
-      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u);
+      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u); setNotifications(n);
     } catch (e) {
       pushError(e.message || "Couldn't load data — check your connection and try again.");
     }
-  }, [pushError]);
+  }, [pushError, session?.id]);
 
   // Auth bootstrap: resume an existing Supabase session, or figure out whether
   // this is a brand-new install (no accounts yet -> show the setup screen).
@@ -129,7 +132,7 @@ export default function LaRocaSystem() {
     if (!session) return;
     loadData();
     return subscribeToChanges(
-      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles"],
+      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles", "notifications", "notification_acks"],
       loadData
     );
   }, [session?.id, loadData]);
@@ -189,6 +192,7 @@ export default function LaRocaSystem() {
     <div style={WRAPPER_STYLE}>
       <FontStyle />
       <ToastStack toasts={toasts} onDismiss={(id) => setToasts((t) => t.filter((x) => x.id !== id))} />
+      <NotificationCenter notifications={notifications} orders={session.role === "storekeeper" ? storeOrders : orders} session={session} refresh={loadData} onError={pushError} />
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6 pb-5 no-print" style={{ borderBottom: "2px solid var(--basalt)" }}>
         <div className="flex items-center gap-3">
           <img src={logo} alt="La Roca" className="w-16 h-16" />

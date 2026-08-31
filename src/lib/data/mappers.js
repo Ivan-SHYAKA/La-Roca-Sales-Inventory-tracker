@@ -118,10 +118,23 @@ export function mapStockAlert(row) {
   };
 }
 
-// Preserves the Postgres error code (e.g. 'P0001' from a trigger's RAISE EXCEPTION) on
-// the thrown Error — callers that only read `.message` are unaffected, but placeOrder's
-// stock-block handling needs `.code` to tell "insufficient stock" apart from any other
-// insert failure.
+export function mapNotification(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    severity: row.severity,
+    targetRole: row.target_role,
+    orderId: row.order_id,
+    inventoryId: row.inventory_id,
+    createdAt: row.created_at,
+  };
+}
+
+// Preserves the Postgres error code (e.g. from a trigger's RAISE EXCEPTION) on the thrown
+// Error — callers that only read `.message` are unaffected, but this lets a caller branch
+// on `.code` when it needs to tell one DB-side rejection apart from another.
 export function check(error) {
   if (error) {
     const e = new Error(error.message);

@@ -3,7 +3,7 @@ import { Clock, CheckCircle2, Info } from "lucide-react";
 import { Card, SectionLabel, PrimaryBtn, ConfirmModal, FlagsPanel } from "./ui";
 import { OrderDetailsModal } from "./OrderDetails";
 import { LINES } from "../lib/constants";
-import { mins, orderLabel } from "../lib/format";
+import { mins, orderLabel, humanizeDuration } from "../lib/format";
 import { serveOrder } from "../lib/data";
 import { groupOrdersByGroupId } from "../lib/business";
 
@@ -74,7 +74,7 @@ export function ReadyToServe({ orders, session, refresh, onError, flags = [] }) 
                             </button>
                             <div className="text-xs mt-0.5 flex items-center gap-1" style={{ color: o.status === "ready" ? "inherit" : "var(--gold)" }}>
                               <Clock size={11} />
-                              {o.status === "ready" ? `Ready ${waiting} min ago` : `Still waiting on ${LINES[o.line].label.toLowerCase()}`}
+                              {o.status === "ready" ? `Ready ${humanizeDuration(waiting * 60000)} ago` : `Still waiting on ${LINES[o.line].label.toLowerCase()}`}
                             </div>
                           </div>
                           <PrimaryBtn color="var(--moss)" disabled={o.status !== "ready"} onClick={() => setConfirming(o)}>Mark served</PrimaryBtn>
