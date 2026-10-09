@@ -382,6 +382,14 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
+# admin-users has to accept calls from people who aren't signed in (first-manager setup and
+# self-service sign-up), so the platform-level "must carry a user JWT" gate is off for it.
+# Nothing is left open by that: every privileged action (create/update/reject) validates the
+# caller as an active manager inside the function itself, and signup can only ever create an
+# inactive pending account.
+[functions.admin-users]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

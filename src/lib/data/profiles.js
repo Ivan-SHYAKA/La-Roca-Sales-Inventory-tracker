@@ -18,3 +18,9 @@ export async function toggleUserActive(userId, active) {
   const { error } = await supabase.from("profiles").update({ active }).eq("id", userId);
   check(error);
 }
+// Approving a self-signed-up account: the manager picks its real role (the pending profile
+// only holds a placeholder) and it becomes a normal active account.
+export async function approveSignup(userId, role) {
+  const { error } = await supabase.from("profiles").update({ role, active: true, signup_pending: false }).eq("id", userId);
+  check(error);
+}

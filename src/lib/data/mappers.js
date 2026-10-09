@@ -3,7 +3,7 @@
 // so the screen components below barely change from la_roca_system.jsx.
 
 export function mapProfile(p) {
-  return { id: p.id, username: p.username, name: p.name, role: p.role, active: p.active };
+  return { id: p.id, username: p.username, name: p.name, role: p.role, active: p.active, signupPending: !!p.signup_pending };
 }
 export function mapOrder(row) {
   return {

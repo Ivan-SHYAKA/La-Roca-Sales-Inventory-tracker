@@ -103,7 +103,12 @@ export default function LaRocaSystem() {
       if (authSession) {
         try {
           const profile = await fetchProfile(authSession.user.id);
-          if (mounted) setSession(profile);
+          // A stored session for an account that's since been disabled (or is still waiting
+          // for approval) shouldn't get into the app -- send it back to the sign-in screen.
+          if (!profile.active) {
+            await supabase.auth.signOut();
+            await refreshNoAccountsYet();
+          } else if (mounted) setSession(profile);
         } catch (e) {
           await supabase.auth.signOut();
           if (mounted) setSession(null);
@@ -124,7 +129,8 @@ export default function LaRocaSystem() {
       }
       try {
         const profile = await fetchProfile(authSession.user.id);
-        setSession(profile);
+        // Inactive accounts never enter the app; LoginForm explains why and signs them out.
+        if (profile.active) setSession(profile);
       } catch (e) { /* profile not ready yet (e.g. mid sign-up) — ignore transient error */ }
     });
     return () => { mounted = false; sub.subscription.unsubscribe(); };
@@ -182,8 +188,10 @@ export default function LaRocaSystem() {
     );
   }
 
+  // Sign-ups waiting on the manager: surfaced on the tab itself so they don't sit unnoticed.
+  const pendingSignups = users.filter((u) => u.signupPending).length;
   const tabsForRole = {
-    manager: [["dashboard", "Dashboard"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", "Users"], ["activity", "My Activity"]],
+    manager: [["dashboard", "Dashboard"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
     waiter: [["neworder", "Take Order"], ["readytoserve", "Ready to Serve"], ["activity", "My Activity"]],
     sales: [["neworder", "New Order / Booking"], ["readytoserve", "Ready to Serve"], ["checkin", "Check-in"], ["billing", "Orders & Billing"], ["activity", "My Activity"]],
     kitchen: [["kitchenqueue", "Kitchen Queue"], ["activity", "My Activity"]],
