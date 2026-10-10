@@ -16,6 +16,7 @@ import { ReadyToServe } from "./components/ReadyToServe";
 import { CheckInQueue } from "./components/CheckInQueue";
 import { StockForm } from "./components/StockForm";
 import { InventoryView } from "./components/InventoryView";
+import { DailySheet } from "./components/DailySheet";
 import { DailyStockReport } from "./components/DailyStockReport";
 import { StockAlertsBanner } from "./components/StockAlertsBanner";
 import { ActivityLog } from "./components/ActivityLog";
@@ -149,7 +150,7 @@ export default function LaRocaSystem() {
 
   useEffect(() => {
     if (session && !tab) {
-      const defaults = { manager: "dashboard", waiter: "neworder", sales: "billing", kitchen: "kitchenqueue", barista: "baristaqueue", storekeeper: "dailyreport" };
+      const defaults = { manager: "dashboard", waiter: "neworder", sales: "billing", kitchen: "kitchenqueue", barista: "baristaqueue", storekeeper: "dailysheet" };
       setTab(defaults[session.role] || "dashboard");
     }
   }, [session]);
@@ -197,7 +198,7 @@ export default function LaRocaSystem() {
     sales: [["neworder", "New Order / Booking"], ["readytoserve", "Ready to Serve"], ["checkin", "Check-in"], ["billing", "Orders & Billing"], ["activity", "My Activity"]],
     kitchen: [["kitchenqueue", "Kitchen Queue"], ["activity", "My Activity"]],
     barista: [["baristaqueue", "Barista Queue"], ["activity", "My Activity"]],
-    storekeeper: [["dailyreport", "Daily Stock Report"], ["stockin", "Stock In"], ["stockout", "Stock Out"], ["inventory", "Inventory"], ["activity", "My Activity"]],
+    storekeeper: [["dailysheet", "Daily Sheet"], ["dailyreport", "Orders & Report"], ["stockin", "Stock In"], ["stockout", "Stock Out"], ["inventory", "Inventory"], ["activity", "My Activity"]],
   }[session.role];
 
   return (
@@ -248,7 +249,8 @@ export default function LaRocaSystem() {
       {tab === "checkin" && <CheckInQueue orders={orders} menu={menu} inventory={inventory} session={session} refresh={loadData} onError={pushError} />}
       {tab === "stockin" && <StockForm mode="in" inventory={inventory} stockEvents={stockEvents} session={session} refresh={loadData} onError={pushError} />}
       {tab === "stockout" && <StockForm mode="out" inventory={inventory} stockEvents={stockEvents} orders={storeOrders} session={session} refresh={loadData} onError={pushError} />}
-      {tab === "inventory" && <InventoryView inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} />}
+      {tab === "inventory" && <InventoryView inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} canEdit={["manager", "storekeeper"].includes(session.role)} refresh={loadData} onError={pushError} />}
+      {tab === "dailysheet" && session.role === "storekeeper" && <DailySheet inventory={inventory} stockEvents={stockEvents} session={session} refresh={loadData} onError={pushError} />}
       {tab === "dailyreport" && <DailyStockReport inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} session={session} />}
       {tab === "activity" && <ActivityLog orders={orders} stockEvents={stockEvents} inventory={inventory} session={session} />}
     </div>

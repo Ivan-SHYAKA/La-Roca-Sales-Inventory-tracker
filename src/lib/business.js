@@ -1,5 +1,6 @@
 import { DEPT_CAPACITY, DEPT_FOR_LINE } from "./constants";
 import { mins, orderLabel, humanizeDuration } from "./format";
+import { usageDelta } from "./stockMath";
 
 // ---------- ORDER LOGIC (unchanged from the prototype) ----------
 export function orderPrepMinutes(order) {
@@ -76,9 +77,14 @@ export function dailyItemLedger(inventory, stockEvents, date) {
     const before = events.filter((e) => new Date(e.date).getTime() < dayStart);
     const opening = Math.max(0, before.reduce((s, e) => s + (e.type === "in" ? e.quantity : -e.quantity), 0));
     const today = events.filter((e) => { const t = new Date(e.date).getTime(); return t >= dayStart && t < dayEnd; });
-    const inQty = today.filter((e) => e.type === "in").reduce((s, e) => s + e.quantity, 0);
+    // Net per reason: a correction (see stockMath.js) is an opposite entry under the same reason.
+    let inQty = 0;
     const outByReason = { usage: 0, waste: 0, spoilage: 0, missing: 0, other: 0 };
-    today.filter((e) => e.type === "out").forEach((e) => { outByReason[e.reason] = (outByReason[e.reason] || 0) + e.quantity; });
+    today.forEach((e) => {
+      const sign = e.type === "in" ? 1 : -1;
+      if (e.reason === "restock") inQty += sign * e.quantity;
+      else outByReason[e.reason] = (outByReason[e.reason] || 0) - sign * e.quantity;
+    });
     const outQty = Object.values(outByReason).reduce((s, v) => s + v, 0);
     return { id: inv.id, name: inv.name, unit: inv.unit, category: inv.category, reorderLevel: inv.reorderLevel, opening, in: inQty, out: outQty, outByReason, closing: Math.max(0, opening + inQty - outQty) };
   });
@@ -221,8 +227,8 @@ export function revenueForPeriod(orders, startDate, endDate) {
 export function recordedCostForPeriod(inventory, stockEvents, startDate, endDate) {
   const [start, end] = rangeBounds(startDate, endDate);
   const invMap = Object.fromEntries(inventory.map((i) => [i.id, i]));
-  const events = stockEvents.filter((e) => e.type === "out" && e.reason === "usage" && (() => { const t = new Date(e.date).getTime(); return t >= start && t < end; })());
-  return events.reduce((s, e) => s + e.quantity * (invMap[e.invId]?.costPerUnit || 0), 0);
+  const events = stockEvents.filter((e) => { const t = new Date(e.date).getTime(); return t >= start && t < end; });
+  return events.reduce((s, e) => s + usageDelta(e) * (invMap[e.invId]?.costPerUnit || 0), 0);
 }
 
 // The system's own estimate of ingredient cost, straight from recipes x served/billed
@@ -286,8 +292,8 @@ export function reconciliation(inventory, orders, menu, stockEvents, days) {
         if (rec) expected += rec.qty * it.qty;
       });
     });
-    const usageEvents = stockEvents.filter((e) => e.invId === inv.id && e.type === "out" && e.reason === "usage" && new Date(e.date).getTime() >= since);
-    const actual = usageEvents.reduce((s, e) => s + e.quantity, 0);
+    const usageEvents = stockEvents.filter((e) => e.invId === inv.id && usageDelta(e) !== 0 && new Date(e.date).getTime() >= since);
+    const actual = usageEvents.reduce((s, e) => s + usageDelta(e), 0);
     const loggedBy = [...new Set(usageEvents.map((e) => e.user))];
     const variance = actual - expected;
     const flagged = expected > 0 && Math.abs(variance) > Math.max(0.15 * expected, inv.reorderLevel * 0.2 || 1);

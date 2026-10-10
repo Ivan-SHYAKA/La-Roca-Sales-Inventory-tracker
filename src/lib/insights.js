@@ -6,6 +6,7 @@
 // come in. Everything is computed from data already loaded in the browser, so it updates
 // live with the rest of the app and needs no separate service.
 import { orderPrepMinutes, groupOrdersByGroupId, profitLossForPeriod } from "./business";
+import { usageDelta } from "./stockMath";
 
 const DAY_MS = 86400000;
 const DONE = ["served", "billed"];
@@ -53,7 +54,7 @@ export function dataReadiness({ orders, stockEvents }) {
   const served = orders.filter((o) => DONE.includes(o.status) && o.servedAt);
   const orderDays = new Set(served.map((o) => dayKey(o.servedAt)));
   const usageDays = new Set(
-    stockEvents.filter((e) => e.type === "out" && e.reason === "usage" && e.source !== "auto_deduction").map((e) => dayKey(e.date))
+    stockEvents.filter((e) => usageDelta(e) > 0).map((e) => dayKey(e.date))
   );
   const both = [...orderDays].filter((d) => usageDays.has(d));
   return { servedOrders: served.length, orderDays: orderDays.size, usageDays: usageDays.size, overlapDays: both.length };
@@ -79,11 +80,12 @@ export function learnIngredientUsage({ orders, menu, inventory, stockEvents }) {
   const usageByInv = new Map();
   const daysWithUsage = new Set();
   stockEvents.forEach((e) => {
-    if (e.type !== "out" || e.reason !== "usage" || e.source === "auto_deduction") return;
+    const q = usageDelta(e);
+    if (q === 0) return;
     const k = dayKey(e.date);
     daysWithUsage.add(k);
     const m = usageByInv.get(e.invId) || new Map();
-    m.set(k, (m.get(k) || 0) + e.quantity);
+    m.set(k, (m.get(k) || 0) + q);
     usageByInv.set(e.invId, m);
   });
 
@@ -182,10 +184,11 @@ export function trainingTable({ orders, menu, inventory, stockEvents }) {
     o.items.forEach((it) => { const n = dishNames[it.menuId] || it.name; r.dishes[n] = (r.dishes[n] || 0) + it.qty; });
   });
   stockEvents.forEach((e) => {
-    if (e.type !== "out" || e.reason !== "usage" || e.source === "auto_deduction") return;
+    const q = usageDelta(e);
+    if (q === 0) return;
     const r = row(dayKey(e.date));
     const n = invNames[e.invId] || e.invId;
-    r.usage[n] = (r.usage[n] || 0) + e.quantity;
+    r.usage[n] = (r.usage[n] || 0) + q;
   });
   const dishCols = [...new Set([...days.values()].flatMap((r) => Object.keys(r.dishes)))].sort();
   const usageCols = [...new Set([...days.values()].flatMap((r) => Object.keys(r.usage)))].sort();
@@ -411,9 +414,9 @@ export function stockRunway({ inventory, stockEvents, now = Date.now(), windowDa
   const since = now - windowDays * DAY_MS;
   const used = new Map();
   stockEvents.forEach((e) => {
-    if (e.type !== "out" || e.reason !== "usage" || e.source === "auto_deduction") return;
-    if (new Date(e.date).getTime() < since) return;
-    used.set(e.invId, (used.get(e.invId) || 0) + e.quantity);
+    const q = usageDelta(e);
+    if (q === 0 || new Date(e.date).getTime() < since) return;
+    used.set(e.invId, (used.get(e.invId) || 0) + q);
   });
   return inventory
     .filter((i) => (used.get(i.id) || 0) > 0)

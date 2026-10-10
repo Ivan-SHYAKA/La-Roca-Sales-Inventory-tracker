@@ -1,13 +1,40 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { Card, SectionLabel, Badge, Input } from "./ui";
+import { Pencil } from "lucide-react";
+import { Card, SectionLabel, Badge, Input, PrimaryBtn } from "./ui";
+import { updateInventoryItems } from "../lib/data";
+import { UNITS } from "../lib/dailySheet";
 import { LINES } from "../lib/constants";
 import { reconciliation } from "../lib/business";
 import { fmt } from "../lib/format";
 
-export function InventoryView({ inventory, orders, menu, stockEvents }) {
+export function InventoryView({ inventory, orders, menu, stockEvents, canEdit = false, refresh, onError }) {
   const [lineFilter, setLineFilter] = useState("all");
   const [search, setSearch] = useState("");
+  // Edit mode: names, units, headings, reorder levels and prices in one table, saved together.
+  // Quantities are not editable here: they only ever change through stock entries.
+  const [editing, setEditing] = useState(false);
+  const [drafts, setDrafts] = useState({});
+  const [busy, setBusy] = useState(false);
+  const setDraft = (id, key, value) => setDrafts((d) => ({ ...d, [id]: { ...(d[id] || {}), [key]: value } }));
+  const categories = useMemo(() => [...new Set(inventory.map((i) => i.category).filter(Boolean))].sort(), [inventory]);
+  const dirtyIds = Object.keys(drafts).filter((id) => {
+    const item = inventory.find((i) => i.id === id);
+    return item && Object.entries(drafts[id]).some(([k, v]) => String(v) !== String(item[k] ?? ""));
+  });
+  const saveDrafts = async () => {
+    setBusy(true);
+    try {
+      await updateInventoryItems(dirtyIds.map((id) => ({ ...inventory.find((i) => i.id === id), ...drafts[id], id })));
+      setDrafts({});
+      setEditing(false);
+      await refresh?.();
+    } catch (e) {
+      onError?.(e.message || "Couldn't save the changes.");
+    } finally {
+      setBusy(false);
+    }
+  };
   const recon = reconciliation(inventory, orders, menu, stockEvents, 30);
 
   const countByLine = useMemo(() => {
@@ -44,8 +71,50 @@ export function InventoryView({ inventory, orders, menu, stockEvents }) {
             </button>
           ))}
         </div>
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search inventory…" className="max-w-xs mb-4" />
-        {visibleInventory.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items yet.</p> : (
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search inventory…" className="max-w-xs !mt-0" />
+          {canEdit && !editing && (
+            <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm border border-[var(--basalt)]/20"><Pencil size={13} /> Edit prices and details</button>
+          )}
+          {editing && (
+            <>
+              <PrimaryBtn color="var(--moss)" disabled={busy || dirtyIds.length === 0} onClick={saveDrafts}>{busy ? "Saving…" : `Save ${dirtyIds.length} change${dirtyIds.length === 1 ? "" : "s"}`}</PrimaryBtn>
+              <button onClick={() => { setEditing(false); setDrafts({}); }} className="px-3 py-1.5 rounded text-sm border border-[var(--basalt)]/20">Cancel</button>
+              <span className="text-xs text-[var(--basalt)]/50">Cost per unit is what the item costs you to buy; profit and loss use it.</span>
+            </>
+          )}
+        </div>
+        {visibleInventory.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items yet.</p> : editing ? (
+          <div className="overflow-x-auto">
+            <datalist id="inv-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
+            <table className="w-full text-sm min-w-[820px]">
+              <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10">
+                <th className="py-2 pr-2">Item</th><th className="py-2 pr-2">Heading</th><th className="py-2 pr-2">Units</th><th className="py-2 pr-2">Used by</th>
+                <th className="py-2 pr-2">Tell me at</th><th className="py-2 pr-2">Cost / unit (RWF)</th><th className="py-2 pr-2">Now</th>
+              </tr></thead>
+              <tbody>
+                {visibleInventory.map((i) => {
+                  const d = drafts[i.id] || {};
+                  const v = (k) => (d[k] !== undefined ? d[k] : (i[k] ?? ""));
+                  const cell = "border border-[var(--basalt)]/15 rounded px-1.5 py-1 text-sm bg-white w-full";
+                  return (
+                    <tr key={i.id} className="border-b border-[var(--basalt)]/5" style={{ background: dirtyIds.includes(i.id) ? "rgba(70,88,63,0.10)" : "transparent" }}>
+                      <td className="py-1 pr-2"><input className={cell} value={v("name")} onChange={(e) => setDraft(i.id, "name", e.target.value)} /></td>
+                      <td className="py-1 pr-2"><input className={cell} list="inv-categories" value={v("category")} onChange={(e) => setDraft(i.id, "category", e.target.value)} /></td>
+                      <td className="py-1 pr-2"><select className={cell} value={v("unit")} onChange={(e) => setDraft(i.id, "unit", e.target.value)}>
+                        {[...new Set([...UNITS, i.unit])].map((u) => <option key={u} value={u}>{u}</option>)}</select></td>
+                      <td className="py-1 pr-2"><select className={cell} value={v("line")} onChange={(e) => setDraft(i.id, "line", e.target.value)}>
+                        {Object.entries(LINES).map(([k, l]) => <option key={k} value={k}>{l.label}</option>)}</select></td>
+                      <td className="py-1 pr-2 w-24"><input className={cell + " text-right"} type="number" min="0" value={v("reorderLevel")} onChange={(e) => setDraft(i.id, "reorderLevel", e.target.value)} /></td>
+                      <td className="py-1 pr-2 w-32"><input className={cell + " text-right"} type="number" min="0" value={v("costPerUnit")} onChange={(e) => setDraft(i.id, "costPerUnit", e.target.value)} /></td>
+                      <td className="py-1 pr-2 font-mono text-xs">{i.quantity} {i.unit}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
           <table className="w-full text-sm">
             <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10"><th className="py-2 pr-3">Item</th><th className="py-2 pr-3">Line</th><th className="py-2 pr-3">Quantity</th><th className="py-2 pr-3">Reorder at</th><th className="py-2 pr-3">Value</th></tr></thead>
             <tbody>

@@ -1,3 +1,4 @@
+import { isReversal } from "../lib/stockMath";
 import { useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight, ListChecks, Info } from "lucide-react";
 import { Card, SectionLabel } from "./ui";
@@ -36,7 +37,7 @@ export function ActivityLog({ orders, stockEvents, inventory, session }) {
     (stockEvents || []).forEach((e) => {
       if (e.userId === session.id && onDay(e.date, day)) {
         const invName = invMap[e.invId]?.name || "—";
-        list.push({ id: e.id + "-stock", time: e.date, text: `Logged stock ${e.type === "in" ? "in" : "out"} — ${invName}: ${e.quantity} (${e.reason})`, detail: e.note, stockEvent: e });
+        list.push({ id: e.id + "-stock", time: e.date, text: isReversal(e) ? `Corrected ${e.reason === "restock" ? "stock in" : "stock out (" + e.reason + ")"} — ${invName}: -${e.quantity}` : `Logged stock ${e.type === "in" ? "in" : "out"} — ${invName}: ${e.quantity} (${e.reason})`, detail: e.note, stockEvent: e });
       }
     });
     return list.sort((a, b) => new Date(b.time) - new Date(a.time));

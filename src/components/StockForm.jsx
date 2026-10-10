@@ -6,12 +6,13 @@ import { LINES } from "../lib/constants";
 import { draftGet, draftSet, draftClear } from "../lib/draft";
 import { logStockEvent } from "../lib/data";
 import { orderLabel } from "../lib/format";
+import { isReversal } from "../lib/stockMath";
 
 export function StockForm({ mode, inventory, stockEvents, orders = [], session, refresh, onError }) {
   const isIn = mode === "in";
   const draftKey = `lr-draft-stock-${mode}-${session.username}`;
   const [existingId, setExistingId] = useState("");
-  const [newItem, setNewItem] = useState({ name: "", line: "restaurant", unit: "kg", reorderLevel: "", costPerUnit: "" });
+  const [newItem, setNewItem] = useState({ name: "", line: "restaurant", category: "", unit: "Kg", reorderLevel: "", costPerUnit: "" });
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("usage");
   const [note, setNote] = useState("");
@@ -49,14 +50,16 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
     }
   };
 
-  const recent = stockEvents.filter((e) => e.type === mode).slice(0, 15);
+  const recent = stockEvents.filter((e) => e.type === mode && !isReversal(e)).slice(0, 15);
   const invMap = Object.fromEntries(inventory.map((i) => [i.id, i]));
   const orderMap = Object.fromEntries(orders.map((o) => [o.id, o]));
   // Only "usage" stock-out has a specific order behind it — waste/spoilage/missing/other don't.
   const linkableOrders = orders.filter((o) => ["placed", "ready", "served"].includes(o.status) && (!existingId || o.line === invMap[existingId]?.line));
 
+  const categories = [...new Set(inventory.map((i) => i.category).filter(Boolean))].sort();
   return (
     <div className="space-y-6">
+      <datalist id="stock-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
       <Card>
         <SectionLabel>{isIn ? "Record stock coming in" : "Record stock going out"}</SectionLabel>
         <label className="text-xs text-[var(--basalt)]/60">Item</label>
@@ -71,6 +74,7 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
             <div><label className="text-xs text-[var(--basalt)]/60">Name</label><Input value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} /></div>
             <div><label className="text-xs text-[var(--basalt)]/60">Line</label><Select value={newItem.line} onChange={(e) => setNewItem({ ...newItem, line: e.target.value })}>{Object.entries(LINES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</Select></div>
+            <div><label className="text-xs text-[var(--basalt)]/60">Heading</label><Input list="stock-categories" value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })} /></div>
             <div><label className="text-xs text-[var(--basalt)]/60">Unit</label><Input value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })} /></div>
             <div><label className="text-xs text-[var(--basalt)]/60">Reorder at</label><Input type="number" value={newItem.reorderLevel} onChange={(e) => setNewItem({ ...newItem, reorderLevel: e.target.value })} /></div>
             <div><label className="text-xs text-[var(--basalt)]/60">Cost/unit (RWF)</label><Input type="number" value={newItem.costPerUnit} onChange={(e) => setNewItem({ ...newItem, costPerUnit: e.target.value })} /></div>
