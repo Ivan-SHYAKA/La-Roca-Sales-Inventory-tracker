@@ -1,13 +1,12 @@
 import { supabase } from "../supabaseClient";
 import { mapMenuItem, check } from "./mappers";
+import { fetchAllRows } from "./paging";
 
 export async function fetchMenu() {
-  const { data, error } = await supabase
-    .from("menu_items")
-    .select("*, recipe_ingredients(*)")
-    .order("created_at", { ascending: false });
-  check(error);
-  return (data || []).map(mapMenuItem);
+  const rows = await fetchAllRows(() =>
+    supabase.from("menu_items").select("*, recipe_ingredients(*)").order("created_at", { ascending: false }).order("id")
+  );
+  return rows.map(mapMenuItem);
 }
 
 // ---------- MENU ----------

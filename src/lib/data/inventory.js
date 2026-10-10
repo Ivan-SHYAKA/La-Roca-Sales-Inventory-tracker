@@ -1,15 +1,14 @@
 import { supabase } from "../supabaseClient";
 import { mapInventory, mapStockEvent, check } from "./mappers";
+import { fetchAllRows } from "./paging";
 
 export async function fetchInventory() {
-  const { data, error } = await supabase.from("inventory").select("*").order("created_at", { ascending: false });
-  check(error);
-  return (data || []).map(mapInventory);
+  const rows = await fetchAllRows(() => supabase.from("inventory").select("*").order("created_at", { ascending: false }).order("id"));
+  return rows.map(mapInventory);
 }
 export async function fetchStockEvents() {
-  const { data, error } = await supabase.from("stock_events").select("*").order("date", { ascending: false });
-  check(error);
-  return (data || []).map(mapStockEvent);
+  const rows = await fetchAllRows(() => supabase.from("stock_events").select("*").order("date", { ascending: false }).order("id"));
+  return rows.map(mapStockEvent);
 }
 
 // ---------- INVENTORY / STOCK EVENTS ----------

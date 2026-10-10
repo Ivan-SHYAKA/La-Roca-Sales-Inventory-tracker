@@ -20,6 +20,7 @@ import { DailyStockReport } from "./components/DailyStockReport";
 import { StockAlertsBanner } from "./components/StockAlertsBanner";
 import { ActivityLog } from "./components/ActivityLog";
 import { FixedCosts } from "./components/FixedCosts";
+import { Insights } from "./components/Insights";
 import { ToastStack } from "./components/Toasts";
 import { NotificationCenter } from "./components/NotificationCenter";
 import logo from "./assets/la-roca-logo.svg";
@@ -191,7 +192,7 @@ export default function LaRocaSystem() {
   // Sign-ups waiting on the manager: surfaced on the tab itself so they don't sit unnoticed.
   const pendingSignups = users.filter((u) => u.signupPending).length;
   const tabsForRole = {
-    manager: [["dashboard", "Dashboard"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
+    manager: [["dashboard", "Dashboard"], ["insights", "Insights"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
     waiter: [["neworder", "Take Order"], ["readytoserve", "Ready to Serve"], ["activity", "My Activity"]],
     sales: [["neworder", "New Order / Booking"], ["readytoserve", "Ready to Serve"], ["checkin", "Check-in"], ["billing", "Orders & Billing"], ["activity", "My Activity"]],
     kitchen: [["kitchenqueue", "Kitchen Queue"], ["activity", "My Activity"]],
@@ -236,6 +237,7 @@ export default function LaRocaSystem() {
 
       {tab === "dashboard" && <Dashboard orders={orders} inventory={inventory} stockEvents={stockEvents} menu={menu} flags={flags} fixedCosts={fixedCosts} />}
       {tab === "menu" && <MenuManager menu={menu} inventory={inventory} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "insights" && session.role === "manager" && <Insights orders={orders} menu={menu} inventory={inventory} stockEvents={stockEvents} fixedCosts={fixedCosts} />}
       {tab === "fixedcosts" && <FixedCosts fixedCosts={fixedCosts} session={session} refresh={loadData} onError={pushError} />}
       {tab === "users" && <UsersManager users={users} session={session} refreshUsers={loadData} onError={pushError} />}
       {tab === "billing" && <BillingBoard orders={orders} session={session} refresh={loadData} onError={pushError} />}
