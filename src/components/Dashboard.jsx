@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Package, ShieldAlert, Download } from "lucide-react";
+import { ShieldAlert, Download, ChevronDown } from "lucide-react";
 import { Card, SectionLabel, Badge, FlagsPanel } from "./ui";
 import { LINES } from "../lib/constants";
 import { reconciliation, dailyStockReport, profitLossForPeriod } from "../lib/business";
@@ -79,6 +79,92 @@ function TrendChart({ data, color, height = 90 }) {
   );
 }
 
+// Low stock, kept short by default: a summary line and the few most urgent items, with the
+// full list (grouped under the storekeeper's headings) one click away. Items that are empty
+// but have no reorder level set aren't "running low" as such, so they sit in their own fold.
+export function LowStockCard({ inventory }) {
+  const [open, setOpen] = useState(false);
+  const [showUntracked, setShowUntracked] = useState(false);
+  const { urgent, untracked } = useMemo(() => {
+    const low = inventory.filter((i) => i.quantity <= i.reorderLevel);
+    return {
+      urgent: low.filter((i) => i.reorderLevel > 0).sort((a, b) => a.quantity / a.reorderLevel - b.quantity / b.reorderLevel || a.name.localeCompare(b.name)),
+      untracked: low.filter((i) => i.reorderLevel <= 0).sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  }, [inventory]);
+
+  const group = (items) => {
+    const by = {};
+    items.forEach((i) => (by[i.category || "Other items"] ||= []).push(i));
+    return Object.entries(by).sort((a, b) => a[0].localeCompare(b[0]));
+  };
+  const chip = (i, muted) => (
+    <div key={i.id} className="text-sm flex items-center justify-between gap-2 px-2.5 py-1.5 rounded border border-[var(--basalt)]/10 bg-white"
+      style={muted ? { opacity: 0.7 } : undefined} title={i.reorderLevel > 0 ? `Reorder at ${i.reorderLevel} ${i.unit}` : "No reorder level set"}>
+      <span className="truncate">{i.name}</span>
+      <span className="font-mono text-xs whitespace-nowrap" style={{ color: muted ? "inherit" : "var(--ember)", fontWeight: 600 }}>{i.quantity} {i.unit}</span>
+    </div>
+  );
+  const grid = "grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3";
+  const total = urgent.length + untracked.length;
+
+  return (
+    <Card>
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-3 text-left" aria-expanded={open}>
+        <div className="flex flex-wrap items-center gap-2">
+          <SectionLabel>Low stock</SectionLabel>
+          {urgent.length > 0 && <Badge color="#B54A28">{urgent.length} to reorder</Badge>}
+          {untracked.length > 0 && <Badge color="#8A857C">{untracked.length} empty, no reorder level</Badge>}
+          {total === 0 && <span className="text-sm text-[var(--basalt)]/50 mb-3">All levels healthy.</span>}
+        </div>
+        {total > 0 && <ChevronDown size={18} className="mb-3 shrink-0 transition-transform" style={{ transform: open ? "rotate(180deg)" : "none" }} />}
+      </button>
+
+      {total > 0 && !open && urgent.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {urgent.slice(0, 6).map((i) => (
+            <span key={i.id} className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(181,74,40,0.10)", color: "var(--ember)" }}>
+              {i.name} · {i.quantity} {i.unit}
+            </span>
+          ))}
+          {urgent.length > 6 && <button onClick={() => setOpen(true)} className="text-xs px-2 py-1 rounded-full border border-[var(--basalt)]/20">+{urgent.length - 6} more</button>}
+        </div>
+      )}
+      {total > 0 && !open && urgent.length === 0 && (
+        <p className="text-xs text-[var(--basalt)]/50">Nothing is below its reorder level. Open to see items that are empty but have no reorder level set.</p>
+      )}
+
+      {open && (
+        <div className="max-h-[28rem] overflow-y-auto pr-1 space-y-4">
+          {group(urgent).map(([cat, items]) => (
+            <div key={cat}>
+              <div className="text-xs uppercase tracking-wide text-[var(--basalt)]/50 mb-1.5">{cat} ({items.length})</div>
+              <div className={grid}>{items.map((i) => chip(i, false))}</div>
+            </div>
+          ))}
+          {untracked.length > 0 && (
+            <div>
+              <button onClick={() => setShowUntracked((v) => !v)} className="text-xs flex items-center gap-1 text-[var(--basalt)]/60 underline">
+                {showUntracked ? "Hide" : "Show"} {untracked.length} empty item{untracked.length === 1 ? "" : "s"} with no reorder level
+              </button>
+              {showUntracked && (
+                <div className="mt-2 space-y-3">
+                  {group(untracked).map(([cat, items]) => (
+                    <div key={cat}>
+                      <div className="text-xs uppercase tracking-wide text-[var(--basalt)]/40 mb-1.5">{cat} ({items.length})</div>
+                      <div className={grid}>{items.map((i) => chip(i, true))}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function Dashboard({ orders, inventory, stockEvents, menu, flags, fixedCosts = [] }) {
   const [rangeKey, setRangeKey] = useState("month");
   const [customStart, setCustomStart] = useState(todayStr());
@@ -98,7 +184,6 @@ export function Dashboard({ orders, inventory, stockEvents, menu, flags, fixedCo
   );
 
   const pipeline = countBy(orders, "status");
-  const lowStock = inventory.filter((i) => i.quantity <= i.reorderLevel);
   const recon = reconciliation(inventory, orders, menu, stockEvents, 30);
   const todayFlagged = dailyStockReport(inventory, orders, menu, stockEvents, todayStr()).filter((r) => r.flagged);
 
@@ -288,12 +373,7 @@ export function Dashboard({ orders, inventory, stockEvents, menu, flags, fixedCo
         )}
       </Card>
 
-      <Card>
-        <SectionLabel>Low stock</SectionLabel>
-        {lowStock.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">All levels healthy.</p> : (
-          <ul className="space-y-1">{lowStock.map((i) => <li key={i.id} className="text-sm flex items-center gap-2"><Package size={13} color="var(--ember)" />{i.name}: {i.quantity} {i.unit} left (reorder at {i.reorderLevel})</li>)}</ul>
-        )}
-      </Card>
+      <LowStockCard inventory={inventory} />
     </div>
   );
 }
