@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Download, Plus, Save, AlertTriangle } from "lucide-react";
-import { Card, SectionLabel, Input, Select, PrimaryBtn } from "./ui";
+import { Card, SectionLabel, Input, Select, PrimaryBtn, Req, MissingHint } from "./ui";
+import { isBlank, isNonNegative } from "../lib/validate";
 import { buildSheet, evaluateRow, eventsForRow, sortInFirst, stampFor, UNITS, CATEGORY_ORDER, NO_CATEGORY } from "../lib/dailySheet";
 import { logStockEvents, createInventoryItem } from "../lib/data";
 import { LINES } from "../lib/constants";
@@ -118,7 +119,7 @@ export function DailySheet({ inventory, stockEvents, session, refresh, onError }
         )}
       </Card>
 
-      {adding && <NewItemPanel sheet={sheet} session={session} onDone={async () => { setAdding(false); await refresh(); }} onError={onError} />}
+      {adding && <NewItemPanel sheet={sheet} inventory={inventory} session={session} onDone={async () => { setAdding(false); await refresh(); }} onError={onError} />}
 
       {visible.length === 0 && (
         <Card><p className="text-sm text-[var(--basalt)]/50">{inventory.length === 0 ? "No items yet — use New item to add the first one." : "Nothing matches that search."}</p></Card>
@@ -209,7 +210,7 @@ export function DailySheet({ inventory, stockEvents, session, refresh, onError }
 
 // An item the sheet doesn't have yet. Its heading and units are picked from what the sheet
 // already uses; the line (restaurant / coffee shop) follows the heading unless changed.
-function NewItemPanel({ sheet, session, onDone, onError }) {
+function NewItemPanel({ sheet, inventory, session, onDone, onError }) {
   const categories = useMemo(() => {
     const names = sheet.map(([c]) => c).filter((c) => c !== NO_CATEGORY);
     return [...new Set([...CATEGORY_ORDER, ...names])];
@@ -223,8 +224,18 @@ function NewItemPanel({ sheet, session, onDone, onError }) {
   const [busy, setBusy] = useState(false);
   const line = f.line || lineByCategory[f.category] || "restaurant";
 
+  // Name, heading and units are needed; the rest can be filled in later from Inventory.
+  const problems = [];
+  if (isBlank(f.name)) problems.push("name");
+  else if (inventory.some((i) => i.name.trim().toLowerCase() === f.name.trim().toLowerCase())) problems.push("a name that isn't already on the sheet");
+  if (isBlank(f.category)) problems.push("heading");
+  if (isBlank(f.unit)) problems.push("units");
+  if (!isBlank(f.quantity) && !isNonNegative(f.quantity)) problems.push("a quantity of 0 or more");
+  if (!isBlank(f.reorderLevel) && !isNonNegative(f.reorderLevel)) problems.push("a reorder level of 0 or more");
+  if (!isBlank(f.costPerUnit) && !isNonNegative(f.costPerUnit)) problems.push("a cost of 0 or more");
+
   const add = async () => {
-    if (!f.name.trim()) return;
+    if (problems.length) return;
     setBusy(true);
     try {
       await createInventoryItem({ ...f, line, session });
@@ -240,10 +251,10 @@ function NewItemPanel({ sheet, session, onDone, onError }) {
     <Card>
       <SectionLabel>New item</SectionLabel>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="col-span-2"><label className="text-xs text-[var(--basalt)]/60">Name</label><Input value={f.name} onChange={set("name")} /></div>
-        <div><label className="text-xs text-[var(--basalt)]/60">Heading</label>
+        <div className="col-span-2"><label className="text-xs text-[var(--basalt)]/60">Name<Req /></label><Input value={f.name} onChange={set("name")} /></div>
+        <div><label className="text-xs text-[var(--basalt)]/60">Heading<Req /></label>
           <Select value={f.category} onChange={set("category")}>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</Select></div>
-        <div><label className="text-xs text-[var(--basalt)]/60">Units</label>
+        <div><label className="text-xs text-[var(--basalt)]/60">Units<Req /></label>
           <Select value={f.unit} onChange={set("unit")}>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</Select></div>
         <div><label className="text-xs text-[var(--basalt)]/60">Quantity in store now</label><Input type="number" min="0" value={f.quantity} onChange={set("quantity")} /></div>
         <div><label className="text-xs text-[var(--basalt)]/60">Tell me when it reaches</label><Input type="number" min="0" value={f.reorderLevel} onChange={set("reorderLevel")} /></div>
@@ -251,7 +262,8 @@ function NewItemPanel({ sheet, session, onDone, onError }) {
         <div><label className="text-xs text-[var(--basalt)]/60">Used by</label>
           <Select value={line} onChange={set("line")}>{Object.entries(LINES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</Select></div>
       </div>
-      <PrimaryBtn color="var(--moss)" className="mt-4" disabled={busy || !f.name.trim()} onClick={add}><Plus size={14} /> {busy ? "Adding…" : "Add to the sheet"}</PrimaryBtn>
+      <MissingHint items={problems} className="mt-3" />
+      <PrimaryBtn color="var(--moss)" className="mt-3" disabled={busy || problems.length > 0} onClick={add}><Plus size={14} /> {busy ? "Adding…" : "Add to the sheet"}</PrimaryBtn>
     </Card>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { Card, SectionLabel, Input, Select, Badge, PrimaryBtn } from "./ui";
+import { Card, SectionLabel, Input, Select, Badge, PrimaryBtn, Req, MissingHint } from "./ui";
+import { isBlank, isPositive } from "../lib/validate";
 import { fmt } from "../lib/format";
 import { addFixedCost, removeFixedCost } from "../lib/data";
 
@@ -19,8 +20,14 @@ export function FixedCosts({ fixedCosts, session, refresh, onError }) {
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
 
+  const problems = [];
+  if (isBlank(form.name)) problems.push("name");
+  if (!isPositive(form.amount)) problems.push("amount (more than 0)");
+  if (isBlank(form.startDate)) problems.push("start date");
+  if (form.endDate && form.startDate && form.endDate < form.startDate) problems.push("an end date that isn't before the start date");
+
   const submit = async () => {
-    if (!form.name.trim() || !form.amount) { onError?.("Name and amount are required."); return; }
+    if (problems.length) return;
     setBusy(true);
     try {
       await addFixedCost(form, session);
@@ -49,15 +56,16 @@ export function FixedCosts({ fixedCosts, session, refresh, onError }) {
         <SectionLabel>Add a fixed cost</SectionLabel>
         <p className="text-xs text-[var(--basalt)]/50 mb-3">Costs that happen regardless of sales — rent, salaries, utilities. A monthly cost counts once for every month it's active when the dashboard works out profit and loss for a period.</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div><label className="text-xs text-[var(--basalt)]/60">Name</label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Chef salary" /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Name<Req /></label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Chef salary" /></div>
           <div><label className="text-xs text-[var(--basalt)]/60">Category</label><Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></div>
-          <div><label className="text-xs text-[var(--basalt)]/60">Amount (RWF)</label><Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Amount (RWF)<Req /></label><Input type="number" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
           <div><label className="text-xs text-[var(--basalt)]/60">Frequency</label><Select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })}><option value="monthly">Every month</option><option value="one_time">One time</option></Select></div>
-          <div><label className="text-xs text-[var(--basalt)]/60">Starts</label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Starts<Req /></label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
           <div><label className="text-xs text-[var(--basalt)]/60">Ends (optional)</label><Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></div>
           <div className="col-span-2"><label className="text-xs text-[var(--basalt)]/60">Note (optional)</label><Input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
         </div>
-        <div className="flex justify-end mt-4"><PrimaryBtn color="var(--moss)" disabled={busy} onClick={submit}><Plus size={15} /> Add fixed cost</PrimaryBtn></div>
+        <div className="flex justify-end mt-4"><PrimaryBtn color="var(--moss)" disabled={busy || problems.length > 0} onClick={submit}><Plus size={15} /> Add fixed cost</PrimaryBtn></div>
+        <MissingHint items={problems} className="mt-2 text-right" />
       </Card>
 
       <Card>

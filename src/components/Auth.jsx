@@ -1,6 +1,17 @@
 import { useState } from "react";
 import { Plus, Pencil } from "lucide-react";
-import { Card, SectionLabel, Input, PasswordInput, Select, Badge, PrimaryBtn, ConfirmModal } from "./ui";
+import { Card, SectionLabel, Input, PasswordInput, Select, Badge, PrimaryBtn, ConfirmModal, Req, MissingHint } from "./ui";
+import { isBlank } from "../lib/validate";
+
+// Same rules the server enforces for sign-ups, so the form can say what is wrong before saving.
+const USERNAME_RE = /^[a-z0-9._-]{3,30}$/i;
+function accountProblems(f, { passwordRequired }) {
+  const p = [];
+  if (isBlank(f.name) || f.name.trim().length < 2) p.push("full name");
+  if (!USERNAME_RE.test((f.username || "").trim())) p.push("username (3-30 letters, numbers, dots, dashes or underscores)");
+  if (passwordRequired ? (f.password || "").length < 8 : (f.password && f.password.length < 8)) p.push("password of at least 8 characters");
+  return p;
+}
 import { supabase, emailForUsername, callAdminUsers } from "../lib/supabaseClient";
 import { toggleUserActive, approveSignup } from "../lib/data";
 import { ROLES } from "../lib/constants";
@@ -186,8 +197,9 @@ export function UsersManager({ users, session, refreshUsers, onError }) {
     }
   };
 
+  const createProblems = accountProblems(form, { passwordRequired: true });
   const addUser = async () => {
-    if (!form.name || !form.username || !form.password) return;
+    if (createProblems.length) return;
     setBusy(true); setError("");
     try {
       await callAdminUsers({ name: form.name, username: form.username, password: form.password, role: form.role });
@@ -242,13 +254,14 @@ export function UsersManager({ users, session, refreshUsers, onError }) {
       <Card>
         <SectionLabel>Create staff account</SectionLabel>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
-          <div><label className="text-xs text-[var(--basalt)]/60">Full name</label><Input autoComplete="off" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-          <div><label className="text-xs text-[var(--basalt)]/60">Username</label><Input autoComplete="off" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></div>
-          <div><label className="text-xs text-[var(--basalt)]/60">Password</label><PasswordInput autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
-          <div><label className="text-xs text-[var(--basalt)]/60">Role</label><Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>{Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Full name<Req /></label><Input autoComplete="off" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Username<Req /></label><Input autoComplete="off" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Password<Req /></label><PasswordInput autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Role<Req /></label><Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>{Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></div>
         </div>
         {error && <p className="text-xs text-[var(--ember)] mt-2">{error}</p>}
-        <div className="flex justify-end mt-4"><PrimaryBtn color="var(--basalt)" disabled={busy} onClick={addUser}><Plus size={15} /> Create account</PrimaryBtn></div>
+        <div className="flex justify-end mt-4"><PrimaryBtn color="var(--basalt)" disabled={busy || createProblems.length > 0} onClick={addUser}><Plus size={15} /> Create account</PrimaryBtn></div>
+        <MissingHint items={(form.name || form.username || form.password) ? createProblems : ["full name", "username", "password"]} className="mt-2 text-right" />
       </Card>
       <Card>
         <SectionLabel>Staff accounts</SectionLabel>
@@ -284,8 +297,9 @@ function EditUserModal({ user, onClose, onSaved }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const problems = accountProblems(form, { passwordRequired: false });
   const save = async () => {
-    if (!form.name.trim() || !form.username.trim()) { setError("Name and username can't be empty."); return; }
+    if (problems.length) { setError("Needed before saving: " + problems.join(", ") + "."); return; }
     setBusy(true); setError("");
     try {
       await callAdminUsers({
@@ -307,8 +321,8 @@ function EditUserModal({ user, onClose, onSaved }) {
   return (
     <ConfirmModal title={`Edit ${user.name}`} confirmLabel="Save changes" confirmColor="var(--moss)" busy={busy} onConfirm={save} onClose={onClose}>
       <div className="space-y-3">
-        <div><label className="text-xs text-[var(--basalt)]/60">Full name</label><Input autoComplete="off" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-        <div><label className="text-xs text-[var(--basalt)]/60">Username</label><Input autoComplete="off" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></div>
+        <div><label className="text-xs text-[var(--basalt)]/60">Full name<Req /></label><Input autoComplete="off" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+        <div><label className="text-xs text-[var(--basalt)]/60">Username<Req /></label><Input autoComplete="off" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></div>
         <div><label className="text-xs text-[var(--basalt)]/60">Role</label><Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>{Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></div>
         <div>
           <div className="flex items-center justify-between">

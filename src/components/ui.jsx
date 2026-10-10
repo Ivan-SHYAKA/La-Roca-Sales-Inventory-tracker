@@ -95,3 +95,16 @@ export function FlagsPanel({ flags }) {
     </Card>
   );
 }
+
+// Marks a field label as required, and lists what a form still needs before it can be saved.
+export function Req() {
+  return <span aria-hidden="true" style={{ color: "var(--ember)" }}> *</span>;
+}
+export function MissingHint({ items, className = "" }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <p className={`text-xs ${className}`} style={{ color: "var(--ember)" }} role="status">
+      Needed before saving: {items.join(", ")}.
+    </p>
+  );
+}

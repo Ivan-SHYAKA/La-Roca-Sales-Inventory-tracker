@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Plus, Minus, Trash2, CheckCircle2, Search, Maximize2, X, Info } from "lucide-react";
-import { Card, SectionLabel, Input, PrimaryBtn, StatusBadge, FlagsPanel } from "./ui";
+import { Card, SectionLabel, Input, PrimaryBtn, StatusBadge, FlagsPanel, Req, MissingHint } from "./ui";
+import { isNonNegative } from "../lib/validate";
 import { OrderDetailsModal } from "./OrderDetails";
 import { LINES, TABLE_SECTIONS } from "../lib/constants";
 import { fmt, orderLabel } from "../lib/format";
@@ -74,6 +75,12 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
       .sort((a, b) => new Date(b.placedAt) - new Date(a.placedAt))
       .slice(0, 8);
   }, [orders, session.id]);
+
+  // Everything that has to be in place before an order can be sent.
+  const missing = [];
+  if (!tableNumber.trim()) missing.push(line === "accommodations" ? "room number" : "table");
+  if (cart.length === 0) missing.push("at least one item");
+  if (isStaffOrder && !isNonNegative(staffTotal)) missing.push("the reduced total");
 
   const submit = async () => {
     if (!tableNumber.trim()) { onError?.("Enter the table/room number before placing the order."); return; }
@@ -247,7 +254,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
           </div>
 
           <div className="mb-4">
-            <label className="text-xs text-[var(--basalt)]/60">{TABLE_LABEL[line]}</label>
+            <label className="text-xs text-[var(--basalt)]/60">{TABLE_LABEL[line]}<Req /></label>
             {line === "accommodations" ? (
               <Input value={tableNumber} onChange={(e) => setTableNumber(e.target.value)} placeholder="e.g. 12" className="text-lg font-semibold" />
             ) : (
@@ -338,15 +345,16 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
                 </label>
                 {isStaffOrder && (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-[var(--basalt)]/60 shrink-0">Reduced total (RWF)</span>
+                    <span className="text-xs text-[var(--basalt)]/60 shrink-0">Reduced total (RWF)<Req /></span>
                     <Input type="number" value={staffTotal} onChange={(e) => setStaffTotal(e.target.value)} className="mt-0" />
                   </div>
                 )}
               </div>
             )}
             <div className="flex justify-end mt-4">
-              <PrimaryBtn disabled={busy} onClick={submit}><Plus size={15} /> Place order</PrimaryBtn>
+              <PrimaryBtn disabled={busy || missing.length > 0} onClick={submit}><Plus size={15} /> Place order</PrimaryBtn>
             </div>
+            <MissingHint items={missing} className="mt-2 text-right" />
           </Card>
 
           <Card>

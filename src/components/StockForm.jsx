@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Plus } from "lucide-react";
-import { Card, SectionLabel, Input, Select, PrimaryBtn } from "./ui";
+import { Card, SectionLabel, Input, Select, PrimaryBtn, Req, MissingHint } from "./ui";
+import { isBlank, isPositive, isNonNegative } from "../lib/validate";
+import { UNITS } from "../lib/dailySheet";
 import { ItemPicker } from "./ItemPicker";
 import { LINES } from "../lib/constants";
 import { draftGet, draftSet, draftClear } from "../lib/draft";
@@ -27,10 +29,22 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
   }, []);
   useEffect(() => { draftSet(draftKey, { existingId, newItem, quantity, reason, note, orderId }); }, [existingId, newItem, quantity, reason, note, orderId]);
 
+  // What's still needed. A new item must have a name, heading and units; waste, spoilage and
+  // "other" need a note saying what happened (that's what the manager reads afterwards).
+  const problems = [];
+  if (!existingId && !isIn) problems.push("the item");
+  if (!existingId && isIn) {
+    if (isBlank(newItem.name)) problems.push("the item (pick one, or fill in a new item's name)");
+    if (isBlank(newItem.category)) problems.push("the new item's heading");
+    if (isBlank(newItem.unit)) problems.push("the new item's units");
+  }
+  if (!isPositive(quantity)) problems.push("quantity (more than 0)");
+  if (!isIn && reason !== "usage" && isBlank(note)) problems.push("a note saying what happened");
+  if (isIn && !existingId && !isBlank(newItem.reorderLevel) && !isNonNegative(newItem.reorderLevel)) problems.push("a reorder level of 0 or more");
+
   const submit = async () => {
     const qty = Number(quantity);
-    if (!qty || qty <= 0) return;
-    if (!existingId && !newItem.name) return;
+    if (problems.length) return;
     if (!isIn && existingId) {
       const available = invMap[existingId]?.quantity ?? 0;
       if (qty > available) {
@@ -62,7 +76,7 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
       <datalist id="stock-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
       <Card>
         <SectionLabel>{isIn ? "Record stock coming in" : "Record stock going out"}</SectionLabel>
-        <label className="text-xs text-[var(--basalt)]/60">Item</label>
+        <label className="text-xs text-[var(--basalt)]/60">Item{!isIn && <Req />}</label>
         <ItemPicker
           items={inventory}
           value={existingId}
@@ -72,22 +86,22 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
         />
         {!existingId && isIn && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-            <div><label className="text-xs text-[var(--basalt)]/60">Name</label><Input value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} /></div>
+            <div><label className="text-xs text-[var(--basalt)]/60">Name<Req /></label><Input value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} /></div>
             <div><label className="text-xs text-[var(--basalt)]/60">Line</label><Select value={newItem.line} onChange={(e) => setNewItem({ ...newItem, line: e.target.value })}>{Object.entries(LINES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</Select></div>
-            <div><label className="text-xs text-[var(--basalt)]/60">Heading</label><Input list="stock-categories" value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })} /></div>
-            <div><label className="text-xs text-[var(--basalt)]/60">Unit</label><Input value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })} /></div>
+            <div><label className="text-xs text-[var(--basalt)]/60">Heading<Req /></label><Input list="stock-categories" value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })} /></div>
+            <div><label className="text-xs text-[var(--basalt)]/60">Unit<Req /></label><Select value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</Select></div>
             <div><label className="text-xs text-[var(--basalt)]/60">Reorder at</label><Input type="number" value={newItem.reorderLevel} onChange={(e) => setNewItem({ ...newItem, reorderLevel: e.target.value })} /></div>
             <div><label className="text-xs text-[var(--basalt)]/60">Cost/unit (RWF)</label><Input type="number" value={newItem.costPerUnit} onChange={(e) => setNewItem({ ...newItem, costPerUnit: e.target.value })} /></div>
           </div>
         )}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">
           <div>
-            <label className="text-xs text-[var(--basalt)]/60">Quantity</label>
+            <label className="text-xs text-[var(--basalt)]/60">Quantity<Req /></label>
             <Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} max={!isIn && existingId ? invMap[existingId]?.quantity : undefined} />
             {!isIn && existingId && <p className="text-xs text-[var(--basalt)]/40 mt-0.5">{invMap[existingId]?.quantity} {invMap[existingId]?.unit} available</p>}
           </div>
           {!isIn && (
-            <div><label className="text-xs text-[var(--basalt)]/60">Reason</label>
+            <div><label className="text-xs text-[var(--basalt)]/60">Reason<Req /></label>
               <Select value={reason} onChange={(e) => setReason(e.target.value)}>
                 <option value="usage">Used in an order (kitchen usage)</option>
                 <option value="waste">Waste</option>
@@ -96,7 +110,7 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
               </Select>
             </div>
           )}
-          <div><label className="text-xs text-[var(--basalt)]/60">Note (optional)</label><Input value={note} onChange={(e) => setNote(e.target.value)} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">{!isIn && reason !== "usage" ? <>Note<Req /></> : "Note (optional)"}</label><Input value={note} onChange={(e) => setNote(e.target.value)} /></div>
         </div>
         {!isIn && reason === "usage" && (
           <div className="mt-3">
@@ -107,7 +121,8 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
             </Select>
           </div>
         )}
-        <div className="flex justify-end mt-4"><PrimaryBtn color={isIn ? "var(--moss)" : "var(--ember)"} disabled={busy} onClick={submit}><Plus size={15} /> {isIn ? "Log stock-in" : "Log stock-out"}</PrimaryBtn></div>
+        <div className="flex justify-end mt-4"><PrimaryBtn color={isIn ? "var(--moss)" : "var(--ember)"} disabled={busy || problems.length > 0} onClick={submit}><Plus size={15} /> {isIn ? "Log stock-in" : "Log stock-out"}</PrimaryBtn></div>
+        <MissingHint items={problems} className="mt-2 text-right" />
         {!isIn && <p className="text-xs text-[var(--basalt)]/50 mt-2">Tagging "Used in an order" lets the manager dashboard reconcile it against what recipes say should've been used — that's the check against misuse or theft.</p>}
       </Card>
 

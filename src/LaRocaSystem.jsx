@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Loader2, LogOut } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, fetchMyNotifications, fetchFixedCosts, subscribeToChanges } from "./lib/data";
+import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, fetchMyNotifications, fetchFixedCosts, fetchAuditLog, markActivitySeen, subscribeToChanges } from "./lib/data";
 import { computeFlags } from "./lib/business";
 import { ROLES, LINES } from "./lib/constants";
 import { orderLabel } from "./lib/format";
@@ -17,6 +17,7 @@ import { CheckInQueue } from "./components/CheckInQueue";
 import { StockForm } from "./components/StockForm";
 import { InventoryView } from "./components/InventoryView";
 import { DailySheet } from "./components/DailySheet";
+import { StaffActivity } from "./components/StaffActivity";
 import { DailyStockReport } from "./components/DailyStockReport";
 import { StockAlertsBanner } from "./components/StockAlertsBanner";
 import { ActivityLog } from "./components/ActivityLog";
@@ -54,6 +55,8 @@ export default function LaRocaSystem() {
   const [users, setUsers] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [fixedCosts, setFixedCosts] = useState([]);
+  const [auditLog, setAuditLog] = useState([]);
+  const [auditLimit, setAuditLimit] = useState(300);
   const [toasts, setToasts] = useState([]);
   const seenOrderIds = useRef(null); // null = "haven't taken a baseline snapshot yet" -> don't alert
 
@@ -76,16 +79,17 @@ export default function LaRocaSystem() {
 
   const loadData = useCallback(async () => {
     try {
-      const [o, so, m, inv, se, sa, u, n, fc] = await Promise.all([
+      const [o, so, m, inv, se, sa, u, n, fc, al] = await Promise.all([
         fetchOrders(), fetchStorekeeperOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchStockAlerts(), fetchProfiles(),
         session ? fetchMyNotifications(session.id) : Promise.resolve([]),
         fetchFixedCosts(),
+        session?.role === "manager" ? fetchAuditLog(auditLimit) : Promise.resolve([]),
       ]);
-      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u); setNotifications(n); setFixedCosts(fc);
+      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u); setNotifications(n); setFixedCosts(fc); setAuditLog(al);
     } catch (e) {
       pushError(e.message || "Couldn't load data — check your connection and try again.");
     }
-  }, [pushError, session?.id]);
+  }, [pushError, session?.id, session?.role, auditLimit]);
 
   // Auth bootstrap: resume an existing Supabase session, or figure out whether
   // this is a brand-new install (no accounts yet -> show the setup screen).
@@ -143,7 +147,7 @@ export default function LaRocaSystem() {
     if (!session) return;
     loadData();
     return subscribeToChanges(
-      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles", "notifications", "notification_acks", "fixed_costs"],
+      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles", "notifications", "notification_acks", "fixed_costs", "audit_log"],
       loadData
     );
   }, [session?.id, loadData]);
@@ -177,6 +181,16 @@ export default function LaRocaSystem() {
     seenOrderIds.current = new Set(orders.map((o) => o.id));
   }, [orders, session]);
 
+  // Activity by other people that the manager hasn't marked as read yet (shown on the tab and
+  // in the browser tab title, so it's visible from any screen).
+  const activitySeenAt = users.find((u) => u.id === session?.id)?.activitySeenAt || null;
+  const activityUnread = session?.role === "manager"
+    ? auditLog.filter((a) => a.actorId !== session.id && new Date(a.at).getTime() > (activitySeenAt ? new Date(activitySeenAt).getTime() : 0)).length
+    : 0;
+  useEffect(() => {
+    document.title = activityUnread > 0 ? `(${activityUnread}) La Roca — Operations` : "La Roca — Operations";
+  }, [activityUnread]);
+
   const flags = useMemo(() => computeFlags(orders), [orders, tick]);
 
   if (booting) return <div className="flex items-center justify-center h-64 gap-2 text-[var(--basalt)]/60"><Loader2 className="animate-spin" size={18} /> Loading La Roca…</div>;
@@ -193,7 +207,7 @@ export default function LaRocaSystem() {
   // Sign-ups waiting on the manager: surfaced on the tab itself so they don't sit unnoticed.
   const pendingSignups = users.filter((u) => u.signupPending).length;
   const tabsForRole = {
-    manager: [["dashboard", "Dashboard"], ["insights", "Insights"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
+    manager: [["dashboard", "Dashboard"], ["insights", "Insights"], ["staffactivity", activityUnread ? `Staff Activity (${activityUnread})` : "Staff Activity"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
     waiter: [["neworder", "Take Order"], ["readytoserve", "Ready to Serve"], ["activity", "My Activity"]],
     sales: [["neworder", "New Order / Booking"], ["readytoserve", "Ready to Serve"], ["checkin", "Check-in"], ["billing", "Orders & Billing"], ["activity", "My Activity"]],
     kitchen: [["kitchenqueue", "Kitchen Queue"], ["activity", "My Activity"]],
@@ -238,6 +252,11 @@ export default function LaRocaSystem() {
 
       {tab === "dashboard" && <Dashboard orders={orders} inventory={inventory} stockEvents={stockEvents} menu={menu} flags={flags} fixedCosts={fixedCosts} />}
       {tab === "menu" && <MenuManager menu={menu} inventory={inventory} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "staffactivity" && session.role === "manager" && (
+        <StaffActivity entries={auditLog} seenAt={activitySeenAt} myId={session.id} canLoadMore={auditLog.length >= auditLimit}
+          onLoadMore={() => setAuditLimit((n) => n + 300)}
+          onMarkRead={async () => { try { await markActivitySeen(session.id); await loadData(); } catch (e) { pushError(e.message || "Couldn't mark as read."); } }} />
+      )}
       {tab === "insights" && session.role === "manager" && <Insights orders={orders} menu={menu} inventory={inventory} stockEvents={stockEvents} fixedCosts={fixedCosts} />}
       {tab === "fixedcosts" && <FixedCosts fixedCosts={fixedCosts} session={session} refresh={loadData} onError={pushError} />}
       {tab === "users" && <UsersManager users={users} session={session} refreshUsers={loadData} onError={pushError} />}

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { CheckCircle2, Info } from "lucide-react";
-import { Card, SectionLabel, Input, Select, PrimaryBtn } from "./ui";
+import { Card, SectionLabel, Input, Select, PrimaryBtn, Req, MissingHint } from "./ui";
+import { isBlank } from "../lib/validate";
 import { OrderDetailsModal } from "./OrderDetails";
 import { orderLabel } from "../lib/format";
 import { checkInOrder } from "../lib/data";
@@ -60,6 +61,11 @@ function CheckInModal({ order, menu, inventory, onClose, onConfirm }) {
   const [guest, setGuest] = useState({ idType: "National ID", idNumber: "", nationality: "", purpose: "" });
   const [amenities, setAmenities] = useState(defaultAmenities);
   const [busy, setBusy] = useState(false);
+  // Guest registry details are a legal requirement, so ID and nationality can't be left out.
+  const problems = [];
+  if (isBlank(guest.idNumber)) problems.push("ID number");
+  if (isBlank(guest.nationality)) problems.push("nationality");
+  if (amenities.some((a) => !(Number(a.qty) >= 0))) problems.push("an amount (0 or more) for each amenity");
   const updateAmenity = (invId, qty) => setAmenities((a) => a.map((x) => x.invId === invId ? { ...x, qty: Number(qty) } : x));
 
   return (
@@ -68,13 +74,13 @@ function CheckInModal({ order, menu, inventory, onClose, onConfirm }) {
         <SectionLabel>Check in — {orderLabel(order)}</SectionLabel>
         <p className="text-xs text-[var(--basalt)]/50 mb-3">Guest registry details (kept for regulatory/government compliance).</p>
         <div className="grid grid-cols-2 gap-3">
-          <div><label className="text-xs text-[var(--basalt)]/60">ID type</label>
+          <div><label className="text-xs text-[var(--basalt)]/60">ID type<Req /></label>
             <Select value={guest.idType} onChange={(e) => setGuest({ ...guest, idType: e.target.value })}>
               <option>National ID</option><option>Passport</option><option>Driving Licence</option><option>Other</option>
             </Select>
           </div>
-          <div><label className="text-xs text-[var(--basalt)]/60">ID number</label><Input value={guest.idNumber} onChange={(e) => setGuest({ ...guest, idNumber: e.target.value })} /></div>
-          <div><label className="text-xs text-[var(--basalt)]/60">Nationality</label><Input value={guest.nationality} onChange={(e) => setGuest({ ...guest, nationality: e.target.value })} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">ID number<Req /></label><Input value={guest.idNumber} onChange={(e) => setGuest({ ...guest, idNumber: e.target.value })} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Nationality<Req /></label><Input value={guest.nationality} onChange={(e) => setGuest({ ...guest, nationality: e.target.value })} /></div>
           <div><label className="text-xs text-[var(--basalt)]/60">Purpose of stay</label><Input value={guest.purpose} onChange={(e) => setGuest({ ...guest, purpose: e.target.value })} /></div>
         </div>
 
@@ -90,8 +96,9 @@ function CheckInModal({ order, menu, inventory, onClose, onConfirm }) {
           </div>
         )}
 
-        <div className="flex gap-2 mt-5">
-          <PrimaryBtn color="var(--moss)" disabled={busy} onClick={async () => {
+        <MissingHint items={problems} className="mt-4" />
+        <div className="flex gap-2 mt-3">
+          <PrimaryBtn color="var(--moss)" disabled={busy || problems.length > 0} onClick={async () => {
             setBusy(true);
             try { await onConfirm(order, guest, amenities); } catch (e) { /* surfaced via onError above */ } finally { setBusy(false); }
           }}>Confirm check-in</PrimaryBtn>

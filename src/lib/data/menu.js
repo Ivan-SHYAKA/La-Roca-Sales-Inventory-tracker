@@ -17,7 +17,7 @@ export async function addMenuItem(form, recipe) {
       name: form.name.trim(),
       line: form.line,
       price: Number(form.price) || 0,
-      prep_minutes: Number(form.prepMinutes) || 5,
+      prep_minutes: Number(form.prepMinutes),
     })
     .select()
     .single();
@@ -37,7 +37,7 @@ export async function updateMenuItem(id, form, recipe) {
       name: form.name.trim(),
       line: form.line,
       price: Number(form.price) || 0,
-      prep_minutes: Number(form.prepMinutes) || 5,
+      prep_minutes: Number(form.prepMinutes),
     })
     .eq("id", id);
   check(error);

@@ -14,6 +14,10 @@
 //    there's nothing to update before any account exists). Can change name/username/role
 //    and optionally reset the password. Username changes also update the synthetic auth
 //    email, since that's what actually backs sign-in.
+//
+// Every action also writes a row to audit_log (the manager's activity feed). That's done here
+// because this function runs as the service role, where a database trigger can't tell who the
+// signed-in manager was.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -35,6 +39,21 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 const ROLES = ["manager", "waiter", "sales", "kitchen", "barista", "storekeeper"];
 const emailFor = (username) => `${username}@laroca.internal`;
 
+// Best-effort: a failure to write the activity row must never fail the account action itself.
+async function logAudit(actor, action, summary, details = {}) {
+  try {
+    await admin.from("audit_log").insert({
+      actor_id: actor?.id ?? null,
+      actor_name: actor?.name || "System",
+      actor_role: actor?.role ?? null,
+      category: "account",
+      action,
+      summary,
+      details,
+    });
+  } catch (_e) { /* ignore */ }
+}
+
 async function requireActiveManager(req) {
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace("Bearer ", "");
@@ -43,13 +62,13 @@ async function requireActiveManager(req) {
 
   const { data: callerProfile } = await admin
     .from("profiles")
-    .select("role, active")
+    .select("role, active, name")
     .eq("id", callerData.user.id)
     .single();
   if (!callerProfile?.active || callerProfile.role !== "manager") {
     return { error: json({ error: "Only an active manager can do this." }, 403) };
   }
-  return { callerId: callerData.user.id };
+  return { callerId: callerData.user.id, caller: { id: callerData.user.id, name: callerProfile.name, role: callerProfile.role } };
 }
 
 Deno.serve(async (req) => {
@@ -84,9 +103,11 @@ async function handleCreate(body, req) {
     return json({ error: "The first account must be a manager." }, 400);
   }
 
+  let caller = null;
   if (!isBootstrap) {
     const auth = await requireActiveManager(req);
     if (auth.error) return auth.error;
+    caller = auth.caller;
   }
 
   const { data: existing } = await admin
@@ -115,6 +136,10 @@ async function handleCreate(body, req) {
     return json({ error: profileError.message }, 400);
   }
 
+  if (caller) {
+    await logAudit(caller, "account_created", `Created the account of ${name.trim()} (${role})`,
+      { name: name.trim(), username: cleanUsername, role });
+  }
   return json({ ok: true, id: created.user.id });
 }
 
@@ -170,6 +195,8 @@ async function handleSignup(body) {
     await admin.auth.admin.deleteUser(created.user.id);
     return json({ error: profileError.message }, 400);
   }
+  await logAudit({ id: created.user.id, name: cleanName, role: null }, "signup_requested",
+    `${cleanName} asked for an account`, { name: cleanName, username: cleanUsername });
   return json({ ok: true });
 }
 
@@ -183,7 +210,7 @@ async function handleReject(body, req) {
   if (!userId) return json({ error: "Missing userId." }, 400);
   const { data: target } = await admin
     .from("profiles")
-    .select("id, active, signup_pending")
+    .select("id, active, signup_pending, name, username")
     .eq("id", userId)
     .maybeSingle();
   if (!target) return json({ error: "Account not found." }, 404);
@@ -192,6 +219,8 @@ async function handleReject(body, req) {
   }
   const { error } = await admin.auth.admin.deleteUser(userId);
   if (error) return json({ error: error.message }, 400);
+  await logAudit(auth.caller, "signup_rejected", `Rejected the sign-up of ${target.name}`,
+    { name: target.name, username: target.username });
   return json({ ok: true });
 }
 
@@ -203,7 +232,7 @@ async function handleUpdate(body, req) {
   if (!userId) return json({ error: "Missing userId." }, 400);
   if (role !== undefined && !ROLES.includes(role)) return json({ error: "Invalid role." }, 400);
 
-  const { data: target } = await admin.from("profiles").select("id, username").eq("id", userId).maybeSingle();
+  const { data: target } = await admin.from("profiles").select("id, username, name, role").eq("id", userId).maybeSingle();
   if (!target) return json({ error: "Account not found." }, 404);
 
   let cleanUsername;
@@ -235,6 +264,18 @@ async function handleUpdate(body, req) {
   if (Object.keys(patch).length) {
     const { error: profileError } = await admin.from("profiles").update(patch).eq("id", userId);
     if (profileError) return json({ error: profileError.message }, 400);
+  }
+
+  const changes = [];
+  if (patch.name !== undefined && patch.name !== target.name) changes.push({ field: "Name", from: target.name, to: patch.name });
+  if (patch.username !== undefined && patch.username !== target.username) changes.push({ field: "Username", from: target.username, to: patch.username });
+  if (patch.role !== undefined && patch.role !== target.role) changes.push({ field: "Role", from: target.role, to: patch.role });
+  if (password) changes.push({ field: "Password", from: "", to: "reset by the manager" });
+  if (changes.length) {
+    const onlyPassword = changes.length === 1 && changes[0].field === "Password";
+    await logAudit(auth.caller, onlyPassword ? "password_reset" : "account_updated",
+      onlyPassword ? `Set a new password for ${target.name}` : `Updated the account of ${target.name}`,
+      { name: target.name, changes });
   }
 
   return json({ ok: true });

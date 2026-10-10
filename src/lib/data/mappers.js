@@ -3,7 +3,20 @@
 // so the screen components below barely change from la_roca_system.jsx.
 
 export function mapProfile(p) {
-  return { id: p.id, username: p.username, name: p.name, role: p.role, active: p.active, signupPending: !!p.signup_pending };
+  return { id: p.id, username: p.username, name: p.name, role: p.role, active: p.active, signupPending: !!p.signup_pending, activitySeenAt: p.activity_seen_at || null };
+}
+export function mapAudit(r) {
+  return {
+    id: r.id,
+    at: r.created_at,
+    actorId: r.actor_id,
+    actorName: r.actor_name || "System",
+    actorRole: r.actor_role,
+    category: r.category,
+    action: r.action,
+    summary: r.summary,
+    details: r.details || {},
+  };
 }
 export function mapOrder(row) {
   return {

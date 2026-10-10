@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Pencil, Eye, EyeOff } from "lucide-react";
-import { Card, SectionLabel, Input, Select, Badge, PrimaryBtn, ConfirmModal } from "./ui";
+import { Card, SectionLabel, Input, Select, Badge, PrimaryBtn, ConfirmModal, Req, MissingHint } from "./ui";
+import { isBlank, isPositive } from "../lib/validate";
 import { ItemPicker } from "./ItemPicker";
 import { LINES } from "../lib/constants";
 import { fmt } from "../lib/format";
@@ -8,6 +9,18 @@ import { draftGet, draftSet, draftClear } from "../lib/draft";
 import { addMenuItem, updateMenuItem, removeMenuItem, setMenuItemActive } from "../lib/data";
 
 const emptyForm = { name: "", line: "restaurant", price: "", prepMinutes: "" };
+
+// What a dish needs before it can be saved. Recipe rows are optional, but a row that's
+// started has to be finished (ingredient and amount) rather than silently dropped.
+function dishProblems(form, recipe) {
+  const p = [];
+  if (isBlank(form.name)) p.push("name");
+  if (!isPositive(form.price)) p.push("price (more than 0)");
+  if (!isPositive(form.prepMinutes)) p.push("prep time in minutes");
+  if (recipe.some((r) => !r.invId || !isPositive(r.qty))) p.push("an ingredient and amount on every recipe row");
+  return p;
+}
+
 
 export function MenuManager({ menu, inventory, session, refresh, onError }) {
   const draftKey = `lr-draft-menu-${session.username}`;
@@ -39,8 +52,9 @@ export function MenuManager({ menu, inventory, session, refresh, onError }) {
   const updateRow = (i, patch) => setRecipe(recipe.map((r, idx) => idx === i ? { ...r, ...patch } : r));
   const removeRow = (i) => setRecipe(recipe.filter((_, idx) => idx !== i));
 
+  const problems = dishProblems(form, recipe);
   const submit = async () => {
-    if (!form.name || !form.price) return;
+    if (problems.length) return;
     try {
       await addMenuItem(form, recipe);
       setForm({ name: "", line: form.line, price: "", prepMinutes: "" }); setRecipe([]); draftClear(draftKey);
@@ -75,10 +89,10 @@ export function MenuManager({ menu, inventory, session, refresh, onError }) {
       <Card>
         <SectionLabel>Add menu / offering item</SectionLabel>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div><label className="text-xs text-[var(--basalt)]/60">Name</label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Cappuccino" /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Name<Req /></label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Cappuccino" /></div>
           <div><label className="text-xs text-[var(--basalt)]/60">Line</label><Select value={form.line} onChange={(e) => setForm({ ...form, line: e.target.value })}>{Object.entries(LINES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</Select></div>
-          <div><label className="text-xs text-[var(--basalt)]/60">Price (RWF)</label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
-          <div><label className="text-xs text-[var(--basalt)]/60">Prep time (min)</label><Input type="number" value={form.prepMinutes} onChange={(e) => setForm({ ...form, prepMinutes: e.target.value })} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Price (RWF)<Req /></label><Input type="number" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
+          <div><label className="text-xs text-[var(--basalt)]/60">Prep time (min)<Req /></label><Input type="number" value={form.prepMinutes} onChange={(e) => setForm({ ...form, prepMinutes: e.target.value })} /></div>
         </div>
         <div className="mt-4">
           <div className="text-xs text-[var(--basalt)]/60 mb-2">Recipe (ingredients consumed per unit sold — used for inventory reconciliation)</div>
@@ -93,8 +107,9 @@ export function MenuManager({ menu, inventory, session, refresh, onError }) {
           <button onClick={addRow} className="text-xs flex items-center gap-1 text-[var(--basalt)]/60"><Plus size={12} /> Add ingredient</button>
         </div>
         <div className="flex justify-end mt-4">
-          <PrimaryBtn color="var(--moss)" onClick={submit}><Plus size={15} /> Add to menu</PrimaryBtn>
+          <PrimaryBtn color="var(--moss)" disabled={problems.length > 0} onClick={submit}><Plus size={15} /> Add to menu</PrimaryBtn>
         </div>
+        <MissingHint items={problems} className="mt-2 text-right" />
         {inventory.length === 0 && <p className="text-xs text-[var(--ember)] mt-2">Add inventory items first (Inventory tab) if you want recipes linked for reconciliation.</p>}
       </Card>
 
@@ -163,7 +178,8 @@ function EditMenuItemModal({ item, inventory, onClose, onSaved, onError }) {
   const removeRow = (i) => setRecipe(recipe.filter((_, idx) => idx !== i));
 
   const save = async () => {
-    if (!form.name.trim() || !form.price) { setError("Name and price are required."); return; }
+    const problems = dishProblems(form, recipe);
+    if (problems.length) { setError("Needed before saving: " + problems.join(", ") + "."); return; }
     setBusy(true); setError("");
     try {
       await updateMenuItem(item.id, form, recipe);
@@ -179,10 +195,10 @@ function EditMenuItemModal({ item, inventory, onClose, onSaved, onError }) {
   return (
     <ConfirmModal title={`Edit ${item.name}`} confirmLabel="Save changes" confirmColor="var(--moss)" busy={busy} onConfirm={save} onClose={onClose}>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-xs text-[var(--basalt)]/60">Name</label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+        <div><label className="text-xs text-[var(--basalt)]/60">Name<Req /></label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
         <div><label className="text-xs text-[var(--basalt)]/60">Line</label><Select value={form.line} onChange={(e) => setForm({ ...form, line: e.target.value })}>{Object.entries(LINES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</Select></div>
-        <div><label className="text-xs text-[var(--basalt)]/60">Price (RWF)</label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
-        <div><label className="text-xs text-[var(--basalt)]/60">Prep time (min)</label><Input type="number" value={form.prepMinutes} onChange={(e) => setForm({ ...form, prepMinutes: e.target.value })} /></div>
+        <div><label className="text-xs text-[var(--basalt)]/60">Price (RWF)<Req /></label><Input type="number" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
+        <div><label className="text-xs text-[var(--basalt)]/60">Prep time (min)<Req /></label><Input type="number" value={form.prepMinutes} onChange={(e) => setForm({ ...form, prepMinutes: e.target.value })} /></div>
       </div>
       <div className="mt-4">
         <div className="text-xs text-[var(--basalt)]/60 mb-2">Recipe (ingredients consumed per unit sold)</div>

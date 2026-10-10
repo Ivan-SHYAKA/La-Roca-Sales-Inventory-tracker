@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Pencil } from "lucide-react";
 import { Card, SectionLabel, Badge, Input, PrimaryBtn } from "./ui";
 import { updateInventoryItems } from "../lib/data";
+import { isBlank, isNonNegative } from "../lib/validate";
 import { UNITS } from "../lib/dailySheet";
 import { LINES } from "../lib/constants";
 import { reconciliation } from "../lib/business";
@@ -22,7 +23,19 @@ export function InventoryView({ inventory, orders, menu, stockEvents, canEdit = 
     const item = inventory.find((i) => i.id === id);
     return item && Object.entries(drafts[id]).some(([k, v]) => String(v) !== String(item[k] ?? ""));
   });
+  // Name and units can't be emptied; reorder level and cost must be numbers of 0 or more.
+  const draftProblems = dirtyIds.flatMap((id) => {
+    const item = inventory.find((i) => i.id === id);
+    const d = { ...item, ...drafts[id] };
+    const bad = [];
+    if (isBlank(d.name)) bad.push("a name");
+    if (isBlank(d.unit)) bad.push("units");
+    if (!isNonNegative(d.reorderLevel)) bad.push("a reorder level of 0 or more");
+    if (!isNonNegative(d.costPerUnit)) bad.push("a cost of 0 or more");
+    return bad.length ? [`${item.name || "An item"}: ${bad.join(", ")}`] : [];
+  });
   const saveDrafts = async () => {
+    if (draftProblems.length) return;
     setBusy(true);
     try {
       await updateInventoryItems(dirtyIds.map((id) => ({ ...inventory.find((i) => i.id === id), ...drafts[id], id })));
@@ -78,9 +91,10 @@ export function InventoryView({ inventory, orders, menu, stockEvents, canEdit = 
           )}
           {editing && (
             <>
-              <PrimaryBtn color="var(--moss)" disabled={busy || dirtyIds.length === 0} onClick={saveDrafts}>{busy ? "Saving…" : `Save ${dirtyIds.length} change${dirtyIds.length === 1 ? "" : "s"}`}</PrimaryBtn>
+              <PrimaryBtn color="var(--moss)" disabled={busy || dirtyIds.length === 0 || draftProblems.length > 0} onClick={saveDrafts}>{busy ? "Saving…" : `Save ${dirtyIds.length} change${dirtyIds.length === 1 ? "" : "s"}`}</PrimaryBtn>
               <button onClick={() => { setEditing(false); setDrafts({}); }} className="px-3 py-1.5 rounded text-sm border border-[var(--basalt)]/20">Cancel</button>
               <span className="text-xs text-[var(--basalt)]/50">Cost per unit is what the item costs you to buy; profit and loss use it.</span>
+              {draftProblems.length > 0 && <span className="text-xs w-full" style={{ color: "var(--ember)" }}>Needed before saving: {draftProblems.slice(0, 3).join("; ")}{draftProblems.length > 3 ? ` and ${draftProblems.length - 3} more` : ""}.</span>}
             </>
           )}
         </div>
