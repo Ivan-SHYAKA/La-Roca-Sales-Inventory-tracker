@@ -7,7 +7,7 @@ import { ItemPicker } from "./ItemPicker";
 import { LINES } from "../lib/constants";
 import { draftGet, draftSet, draftClear } from "../lib/draft";
 import { logStockEvent } from "../lib/data";
-import { orderLabel } from "../lib/format";
+import { orderLabel, fmt } from "../lib/format";
 import { isReversal } from "../lib/stockMath";
 
 export function StockForm({ mode, inventory, stockEvents, orders = [], session, refresh, onError }) {
@@ -99,6 +99,11 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
             <label className="text-xs text-[var(--basalt)]/60">Quantity<Req /></label>
             <Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} max={!isIn && existingId ? invMap[existingId]?.quantity : undefined} />
             {!isIn && existingId && <p className="text-xs text-[var(--basalt)]/40 mt-0.5">{invMap[existingId]?.quantity} {invMap[existingId]?.unit} available</p>}
+            {existingId && isPositive(quantity) && (
+              invMap[existingId]?.costPerUnit > 0
+                ? <p className="text-xs mt-0.5" style={{ color: "var(--moss)" }}>Value: RWF {fmt(Number(quantity) * invMap[existingId].costPerUnit)} (at RWF {fmt(invMap[existingId].costPerUnit)} per {invMap[existingId].unit})</p>
+                : <p className="text-xs text-[var(--basalt)]/40 mt-0.5">No cost per unit set yet, so no value to show. Set it in Inventory → Edit prices and details.</p>
+            )}
           </div>
           {!isIn && (
             <div><label className="text-xs text-[var(--basalt)]/60">Reason<Req /></label>
@@ -130,13 +135,14 @@ export function StockForm({ mode, inventory, stockEvents, orders = [], session, 
         <SectionLabel>Recent {isIn ? "stock-in" : "stock-out"} events</SectionLabel>
         {recent.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">Nothing logged yet.</p> : (
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10"><th className="py-2 pr-3">Item</th><th className="py-2 pr-3">Qty</th>{!isIn && <th className="py-2 pr-3">Reason</th>}{!isIn && <th className="py-2 pr-3">Order</th>}<th className="py-2 pr-3">By</th><th className="py-2 pr-3">When</th></tr></thead>
+            <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10"><th className="py-2 pr-3">Item</th><th className="py-2 pr-3">Qty</th>{!isIn && <th className="py-2 pr-3">Reason</th>}{!isIn && <th className="py-2 pr-3">Order</th>}<th className="py-2 pr-3">Price (RWF)</th><th className="py-2 pr-3">By</th><th className="py-2 pr-3">When</th></tr></thead>
             <tbody>{recent.map((e) => (
               <tr key={e.id} className="border-b border-[var(--basalt)]/5">
                 <td className="py-2 pr-3">{invMap[e.invId]?.name || "—"}</td>
                 <td className="py-2 pr-3 font-mono text-xs">{e.quantity} {invMap[e.invId]?.unit}</td>
                 {!isIn && <td className="py-2 pr-3 text-xs">{e.reason}</td>}
                 {!isIn && <td className="py-2 pr-3 text-xs">{e.orderId && orderMap[e.orderId] ? orderLabel(orderMap[e.orderId]) : "—"}</td>}
+                <td className="py-2 pr-3 font-mono text-xs">{invMap[e.invId]?.costPerUnit > 0 ? fmt(e.quantity * invMap[e.invId].costPerUnit) : "—"}</td>
                 <td className="py-2 pr-3 text-xs">{e.user}</td>
                 <td className="py-2 pr-3 text-xs text-[var(--basalt)]/50">{new Date(e.date).toLocaleString()}</td>
               </tr>

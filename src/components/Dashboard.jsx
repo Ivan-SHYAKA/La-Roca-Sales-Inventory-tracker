@@ -184,6 +184,18 @@ export function Dashboard({ orders, inventory, stockEvents, menu, flags, fixedCo
   );
 
   const pipeline = countBy(orders, "status");
+  // Placed / ready / served / cancelled are "right now" counts. Billed only ever grows, so it
+  // is counted for the period chosen above (today, this week, this month, or a custom range).
+  const billedInPeriod = useMemo(() => {
+    const start = new Date(startDate).getTime();
+    const end = new Date(endDate).getTime() + 86400000;
+    const billed = orders.filter((o) => {
+      if (o.status !== "billed" || !o.billedAt) return false;
+      const t = new Date(o.billedAt).getTime();
+      return t >= start && t < end;
+    });
+    return { count: billed.length, amount: billed.reduce((sum, o) => sum + o.total, 0) };
+  }, [orders, startDate, endDate]);
   const recon = reconciliation(inventory, orders, menu, stockEvents, 30);
   const todayFlagged = dailyStockReport(inventory, orders, menu, stockEvents, todayStr()).filter((r) => r.flagged);
 
@@ -316,10 +328,16 @@ export function Dashboard({ orders, inventory, stockEvents, menu, flags, fixedCo
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {["placed", "ready", "served", "cancelled"].map((s) => (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {["placed", "ready", "served"].map((s) => (
           <Card key={s}><SectionLabel>{s}</SectionLabel><div className="text-2xl font-semibold" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{pipeline[s] || 0}</div></Card>
         ))}
+        <Card>
+          <SectionLabel>billed</SectionLabel>
+          <div className="text-2xl font-semibold" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{billedInPeriod.count}</div>
+          <div className="text-xs text-[var(--basalt)]/50 mt-1">{rangeLabel.toLowerCase()} · RWF {fmt(billedInPeriod.amount)}</div>
+        </Card>
+        <Card><SectionLabel>cancelled</SectionLabel><div className="text-2xl font-semibold" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{pipeline.cancelled || 0}</div></Card>
       </div>
 
       <FlagsPanel flags={flags} />

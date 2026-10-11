@@ -3,6 +3,7 @@ import { ShieldAlert } from "lucide-react";
 import { Card, SectionLabel, Input, FlagsPanel, StatusBadge, Badge } from "./ui";
 import { dailyStockReport, computeStorekeeperAlerts, ordersForStorekeeperLog } from "../lib/business";
 import { LINES } from "../lib/constants";
+import { fmt } from "../lib/format";
 
 function todayStr() {
   const d = new Date();
@@ -16,6 +17,12 @@ export function DailyStockReport({ inventory, orders, menu, stockEvents, session
   const alerts = useMemo(() => computeStorekeeperAlerts(orders, menu, inventory), [orders, menu, inventory]);
   const orderLog = useMemo(() => ordersForStorekeeperLog(orders, menu, inventory, date), [orders, menu, inventory, date]);
   const isManager = session.role === "manager";
+  // Price of what went out = quantity x the item's cost per unit (its current cost; items
+  // without a cost set show a dash and count as 0 in the total).
+  const costOf = useMemo(() => Object.fromEntries(inventory.map((i) => [i.id, i.costPerUnit || 0])), [inventory]);
+  const outValue = (r) => r.out * (costOf[r.id] || 0);
+  const totalOutValue = useMemo(() => report.reduce((s, r) => s + r.out * (costOf[r.id] || 0), 0), [report, costOf]);
+  const missingCost = report.some((r) => r.out > 0 && !costOf[r.id]);
 
   const groups = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -42,7 +49,12 @@ export function DailyStockReport({ inventory, orders, menu, stockEvents, session
         <div className="flex flex-wrap gap-3 items-end">
           <div><label className="text-xs text-[var(--basalt)]/60">Date</label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="max-w-[180px]" /></div>
           <div className="flex-1 min-w-[180px]"><label className="text-xs text-[var(--basalt)]/60">Search item</label><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter by name…" /></div>
+          <div className="text-sm pb-1.5">
+            <div className="text-xs text-[var(--basalt)]/60">Price of stock out this day</div>
+            <div className="font-mono font-semibold">RWF {fmt(totalOutValue)}</div>
+          </div>
         </div>
+        {missingCost && <p className="text-xs text-[var(--basalt)]/50 mt-2">Some items that went out have no cost per unit set yet, so they show a dash and aren't in the total. Set them in Inventory → Edit prices and details.</p>}
       </Card>
 
       <Card>
@@ -93,6 +105,7 @@ export function DailyStockReport({ inventory, orders, menu, stockEvents, session
                 <th className="py-2 pr-3">Opening</th>
                 <th className="py-2 pr-3">In</th>
                 <th className="py-2 pr-3">Out (recorded)</th>
+                <th className="py-2 pr-3">Out price (RWF)</th>
                 <th className="py-2 pr-3">Closing</th>
                 <th className="py-2 pr-3">Missing</th>
                 <th className="py-2 pr-3">Spoiled</th>
@@ -107,6 +120,7 @@ export function DailyStockReport({ inventory, orders, menu, stockEvents, session
                   <td className="py-2 pr-3 font-mono text-xs">{r.opening} {r.unit}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{r.in} {r.unit}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{r.out} {r.unit}</td>
+                  <td className="py-2 pr-3 font-mono text-xs">{costOf[r.id] > 0 ? fmt(outValue(r)) : "—"}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{r.closing} {r.unit}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{r.missing || 0} {r.unit}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{r.spoiled || 0} {r.unit}</td>
