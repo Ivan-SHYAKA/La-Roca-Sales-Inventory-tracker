@@ -1,15 +1,15 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { Pencil } from "lucide-react";
+import { Pencil, ClipboardCheck } from "lucide-react";
 import { Card, SectionLabel, Badge, Input, PrimaryBtn } from "./ui";
-import { updateInventoryItems } from "../lib/data";
+import { updateInventoryItems, logStockEvents } from "../lib/data";
 import { isBlank, isNonNegative } from "../lib/validate";
 import { UNITS } from "../lib/dailySheet";
 import { LINES } from "../lib/constants";
 import { reconciliation } from "../lib/business";
 import { fmt } from "../lib/format";
 
-export function InventoryView({ inventory, orders, menu, stockEvents, canEdit = false, refresh, onError }) {
+export function InventoryView({ inventory, orders, menu, stockEvents, canEdit = false, canCorrect = false, session, refresh, onError }) {
   const [lineFilter, setLineFilter] = useState("all");
   const [search, setSearch] = useState("");
   // Edit mode: names, units, headings, reorder levels and prices in one table, saved together.
@@ -17,6 +17,42 @@ export function InventoryView({ inventory, orders, menu, stockEvents, canEdit = 
   const [editing, setEditing] = useState(false);
   const [drafts, setDrafts] = useState({});
   const [busy, setBusy] = useState(false);
+  // Stock count correction: type what is really on the shelf; the difference is saved as a
+  // clearly-labelled correction (not usage, not missing), with one reason for the whole save.
+  const [counting, setCounting] = useState(false);
+  const [counts, setCounts] = useState({});
+  const [countReason, setCountReason] = useState("");
+  const countedRows = inventory
+    .filter((i) => counts[i.id] !== undefined && counts[i.id] !== "")
+    .map((i) => ({ item: i, counted: Number(counts[i.id]) }))
+    .filter((r) => Number.isFinite(r.counted) && r.counted >= 0 && Math.abs(r.counted - r.item.quantity) > 1e-9);
+  const badCounts = inventory.filter((i) => counts[i.id] !== undefined && counts[i.id] !== "" && !(Number.isFinite(Number(counts[i.id])) && Number(counts[i.id]) >= 0));
+  const countProblems = [];
+  if (countedRows.length === 0) countProblems.push("at least one counted quantity that differs from the system");
+  if (badCounts.length > 0) countProblems.push("counted quantities of 0 or more");
+  if (!countReason.trim()) countProblems.push("a reason for the correction");
+  const saveCounts = async () => {
+    if (countProblems.length) return;
+    setBusy(true);
+    try {
+      const when = new Date().toISOString();
+      const events = countedRows.map(({ item, counted }) => ({
+        invId: item.id,
+        type: counted > item.quantity ? "in" : "out",
+        reason: "adjustment",
+        quantity: Math.round(Math.abs(counted - item.quantity) * 1000) / 1000,
+        date: when,
+        note: `Stock count correction (was ${item.quantity}, now ${counted}): ${countReason.trim()}`,
+      }));
+      await logStockEvents([...events.filter((e) => e.type === "in"), ...events.filter((e) => e.type === "out")], session);
+      setCounts({}); setCountReason(""); setCounting(false);
+      await refresh?.();
+    } catch (e) {
+      onError?.(e.message || "Couldn't save the stock count — nothing was changed.");
+    } finally {
+      setBusy(false);
+    }
+  };
   const setDraft = (id, key, value) => setDrafts((d) => ({ ...d, [id]: { ...(d[id] || {}), [key]: value } }));
   const categories = useMemo(() => [...new Set(inventory.map((i) => i.category).filter(Boolean))].sort(), [inventory]);
   const dirtyIds = Object.keys(drafts).filter((id) => {
@@ -86,7 +122,16 @@ export function InventoryView({ inventory, orders, menu, stockEvents, canEdit = 
         </div>
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search inventory…" className="max-w-xs !mt-0" />
-          {canEdit && !editing && (
+          {canCorrect && !editing && !counting && (
+            <button onClick={() => setCounting(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm border border-[var(--basalt)]/20"><ClipboardCheck size={13} /> Correct stock count</button>
+          )}
+          {counting && (
+            <>
+              <PrimaryBtn color="var(--moss)" disabled={busy || countProblems.length > 0} onClick={saveCounts}>{busy ? "Saving…" : `Save ${countedRows.length} correction${countedRows.length === 1 ? "" : "s"}`}</PrimaryBtn>
+              <button onClick={() => { setCounting(false); setCounts({}); setCountReason(""); }} className="px-3 py-1.5 rounded text-sm border border-[var(--basalt)]/20">Cancel</button>
+            </>
+          )}
+          {canEdit && !editing && !counting && (
             <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm border border-[var(--basalt)]/20"><Pencil size={13} /> Edit prices and details</button>
           )}
           {editing && (
@@ -98,7 +143,52 @@ export function InventoryView({ inventory, orders, menu, stockEvents, canEdit = 
             </>
           )}
         </div>
-        {visibleInventory.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items yet.</p> : editing ? (
+        {counting && (
+          <div className="mb-4 p-3 rounded border border-[var(--basalt)]/10">
+            <p className="text-xs text-[var(--basalt)]/60 mb-2">
+              Type the quantity that is really in store for any item that is wrong. Leave the others empty. The difference is saved as a
+              <b> stock count correction</b>: it fixes the quantity without counting as used, missing or spoiled, and it shows in Staff Activity with your reason.
+            </p>
+            <label className="text-xs text-[var(--basalt)]/60">Reason for this correction<span style={{ color: "var(--ember)" }}> *</span></label>
+            <Input value={countReason} onChange={(e) => setCountReason(e.target.value)} placeholder="e.g. Opening balance was entered wrongly from the Excel file" />
+            {countProblems.length > 0 && (counts && Object.keys(counts).length > 0 || countReason) && (
+              <p className="text-xs mt-2" style={{ color: "var(--ember)" }}>Needed before saving: {countProblems.join(", ")}.</p>
+            )}
+          </div>
+        )}
+        {visibleInventory.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No items yet.</p> : counting ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10">
+                <th className="py-2 pr-3">Item</th><th className="py-2 pr-3">Heading</th><th className="py-2 pr-3">System says</th><th className="py-2 pr-3">Really in store</th><th className="py-2 pr-3">Difference</th>
+              </tr></thead>
+              <tbody>
+                {visibleInventory.map((i) => {
+                  const raw = counts[i.id];
+                  const entered = raw !== undefined && raw !== "";
+                  const n = Number(raw);
+                  const valid = entered && Number.isFinite(n) && n >= 0;
+                  const diff = valid ? Math.round((n - i.quantity) * 1000) / 1000 : 0;
+                  return (
+                    <tr key={i.id} className="border-b border-[var(--basalt)]/5" style={{ background: valid && diff !== 0 ? "rgba(70,88,63,0.10)" : entered && !valid ? "rgba(181,74,40,0.08)" : "transparent" }}>
+                      <td className="py-1.5 pr-3">{i.name}</td>
+                      <td className="py-1.5 pr-3 text-xs text-[var(--basalt)]/60">{i.category || "—"}</td>
+                      <td className="py-1.5 pr-3 font-mono text-xs">{i.quantity} {i.unit}</td>
+                      <td className="py-1.5 pr-3 w-36">
+                        <input type="text" inputMode="decimal" value={raw ?? ""} placeholder={String(i.quantity)}
+                          onChange={(e) => setCounts((c) => ({ ...c, [i.id]: e.target.value }))} onFocus={(e) => e.target.select()}
+                          className="border border-[var(--basalt)]/15 rounded px-1.5 py-1 text-sm bg-white text-right w-full" />
+                      </td>
+                      <td className="py-1.5 pr-3 font-mono text-xs" style={{ color: diff === 0 ? "inherit" : diff > 0 ? "var(--moss)" : "var(--ember)" }}>
+                        {valid && diff !== 0 ? `${diff > 0 ? "+" : ""}${diff} ${i.unit}` : entered && !valid ? "not a number" : ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : editing ? (
           <div className="overflow-x-auto">
             <datalist id="inv-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
             <table className="w-full text-sm min-w-[820px]">

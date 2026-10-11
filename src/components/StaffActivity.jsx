@@ -11,7 +11,7 @@ const CATEGORIES = {
   account: { label: "Accounts", color: "#26221D", icon: UserCog },
 };
 const PAYMENT = { cash: "cash", mobile_money: "mobile money", card: "card" };
-const STOCK_REASON = { restock: "In", usage: "Out", waste: "Waste", spoilage: "Spoiled", missing: "Missing", other: "Other" };
+const STOCK_REASON = { restock: "In", usage: "Out", waste: "Waste", spoilage: "Spoiled", missing: "Missing", other: "Other", adjustment: "Stock count correction" };
 const FIELD_VALUE = (field, v) => {
   if (v === true) return "yes";
   if (v === false) return "no";
@@ -30,7 +30,7 @@ function detailLines(a) {
   switch (a.action) {
     case "stock_recorded":
       (d.items || []).forEach((i) => {
-        const reversal = (i.type === "in" && i.reason !== "restock") || (i.type === "out" && i.reason === "restock");
+        const reversal = i.reason !== "adjustment" && ((i.type === "in" && i.reason !== "restock") || (i.type === "out" && i.reason === "restock"));
         const sign = i.type === "in" ? "+" : "−";
         const what = reversal ? `Correction (${STOCK_REASON[i.reason] || i.reason} lowered)` : STOCK_REASON[i.reason] || i.reason;
         out.push(`${what}: ${sign}${i.quantity} ${i.unit} ${i.name}${i.note ? ` — "${i.note}"` : ""}`);

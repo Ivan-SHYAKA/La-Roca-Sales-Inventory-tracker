@@ -268,7 +268,7 @@ export default function LaRocaSystem() {
       {tab === "checkin" && <CheckInQueue orders={orders} menu={menu} inventory={inventory} session={session} refresh={loadData} onError={pushError} />}
       {tab === "stockin" && <StockForm mode="in" inventory={inventory} stockEvents={stockEvents} session={session} refresh={loadData} onError={pushError} />}
       {tab === "stockout" && <StockForm mode="out" inventory={inventory} stockEvents={stockEvents} orders={storeOrders} session={session} refresh={loadData} onError={pushError} />}
-      {tab === "inventory" && <InventoryView inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} canEdit={["manager", "storekeeper"].includes(session.role)} refresh={loadData} onError={pushError} />}
+      {tab === "inventory" && <InventoryView inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} canEdit={["manager", "storekeeper"].includes(session.role)} canCorrect={session.role === "manager"} session={session} refresh={loadData} onError={pushError} />}
       {tab === "dailysheet" && session.role === "storekeeper" && <DailySheet inventory={inventory} stockEvents={stockEvents} session={session} refresh={loadData} onError={pushError} />}
       {tab === "dailyreport" && <DailyStockReport inventory={inventory} orders={session.role === "storekeeper" ? storeOrders : orders} menu={menu} stockEvents={stockEvents} session={session} />}
       {tab === "activity" && <ActivityLog orders={orders} stockEvents={stockEvents} inventory={inventory} session={session} />}

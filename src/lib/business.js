@@ -75,16 +75,21 @@ export function dailyItemLedger(inventory, stockEvents, date) {
   return inventory.map((inv) => {
     const events = manualEvents.filter((e) => e.invId === inv.id);
     const before = events.filter((e) => new Date(e.date).getTime() < dayStart);
-    const opening = Math.max(0, before.reduce((s, e) => s + (e.type === "in" ? e.quantity : -e.quantity), 0));
+    const openingBase = before.reduce((s, e) => s + (e.type === "in" ? e.quantity : -e.quantity), 0);
     const today = events.filter((e) => { const t = new Date(e.date).getTime(); return t >= dayStart && t < dayEnd; });
     // Net per reason: a correction (see stockMath.js) is an opposite entry under the same reason.
+    // A stock count correction ("adjustment") re-bases the day's Opening instead of being
+    // counted as stock in or out, so it never reads as consumption or as a shortfall.
     let inQty = 0;
+    let adjusted = 0;
     const outByReason = { usage: 0, waste: 0, spoilage: 0, missing: 0, other: 0 };
     today.forEach((e) => {
       const sign = e.type === "in" ? 1 : -1;
-      if (e.reason === "restock") inQty += sign * e.quantity;
+      if (e.reason === "adjustment") adjusted += sign * e.quantity;
+      else if (e.reason === "restock") inQty += sign * e.quantity;
       else outByReason[e.reason] = (outByReason[e.reason] || 0) - sign * e.quantity;
     });
+    const opening = Math.max(0, openingBase + adjusted);
     const outQty = Object.values(outByReason).reduce((s, v) => s + v, 0);
     return { id: inv.id, name: inv.name, unit: inv.unit, category: inv.category, reorderLevel: inv.reorderLevel, opening, in: inQty, out: outQty, outByReason, closing: Math.max(0, opening + inQty - outQty) };
   });

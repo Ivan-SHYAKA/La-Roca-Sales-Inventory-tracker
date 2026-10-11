@@ -3,7 +3,7 @@
 // records only the difference. A reduction is written as an opposite entry under the same
 // reason — e.g. stock "out" with reason "restock" takes back some of that day's stock-in —
 // so the original entry stays visible and everything nets out per reason.
-export const isReversal = (e) => (e.type === "in" && e.reason !== "restock") || (e.type === "out" && e.reason === "restock");
+export const isReversal = (e) => e.reason !== "adjustment" && ((e.type === "in" && e.reason !== "restock") || (e.type === "out" && e.reason === "restock"));
 
 // Signed amount an event adds to "usage" (stock consumed to make food and drinks).
 export function usageDelta(e) {
