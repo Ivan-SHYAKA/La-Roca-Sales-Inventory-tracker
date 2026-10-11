@@ -76,6 +76,13 @@ function detailLines(a) {
         if (d.staff_order) out.push("Staff personal order (reduced price)");
         if (d.payment_method) out.push(`Paid ${d.amount_paid != null ? `RWF ${fmt(d.amount_paid)} ` : ""}by ${PAYMENT[d.payment_method] || d.payment_method}`);
         if (d.cancel_reason) out.push(`Reason: ${d.cancel_reason}`);
+        if (d.void_reason) out.push(`Reason: ${d.void_reason}`);
+        if (a.action === "invoice_removal_requested" || a.action === "invoice_removal_rejected") {
+          if (d.total) out.push(`Invoice total: RWF ${fmt(d.total)}`);
+          if (d.reason) out.push(`Reason given: ${d.reason}`);
+          if (d.asked_by) out.push(`Asked by ${d.asked_by}`);
+          if (d.note) out.push(`Manager's answer: ${d.note}`);
+        }
       }
   }
   return out;

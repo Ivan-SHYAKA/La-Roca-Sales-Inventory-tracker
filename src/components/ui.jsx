@@ -55,8 +55,8 @@ export function PrimaryBtn({ children, color = "var(--ember)", disabled, classNa
   );
 }
 export function StatusBadge({ status }) {
-  const map = { placed: "#26221D", ready: "#8A6FB0", cancelled: "#B54A28", served: "#B8923F", billed: "#46583F" };
-  return <Badge color={map[status]}>{status}</Badge>;
+  const map = { placed: "#26221D", ready: "#8A6FB0", cancelled: "#B54A28", served: "#B8923F", billed: "#46583F", voided: "#8A857C" };
+  return <Badge color={map[status] || "#26221D"}>{status === "voided" ? "removed" : status}</Badge>;
 }
 // Generic acknowledgement/confirmation popup: used anywhere a status-changing action
 // (mark ready, mark served, cancel, etc.) should require an explicit "yes" instead of

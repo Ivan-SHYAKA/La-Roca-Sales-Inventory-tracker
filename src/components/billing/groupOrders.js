@@ -18,11 +18,11 @@ export function groupOrders(orders) {
     let siblings;
     if (!o.tableNumber) {
       siblings = [o];
-    } else if (o.status === "billed" || o.status === "cancelled") {
+    } else if (o.status === "billed" || o.status === "cancelled" || o.status === "voided") {
       const ts = new Date(o.billedAt || o.cancelledAt || o.placedAt).getTime();
       siblings = orders.filter((x) =>
         !used.has(x.id) && x.tableNumber === o.tableNumber &&
-        (x.status === "billed" || x.status === "cancelled") &&
+        (x.status === "billed" || x.status === "cancelled" || x.status === "voided") &&
         Math.abs(new Date(x.billedAt || x.cancelledAt || x.placedAt).getTime() - ts) < 60000
       );
     } else {

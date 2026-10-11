@@ -1,6 +1,6 @@
 import { supabase } from "../supabaseClient";
 import { now } from "../format";
-import { mapOrder, mapStorekeeperOrders, check } from "./mappers";
+import { mapOrder, mapStorekeeperOrders, mapRemovalRequest, check } from "./mappers";
 import { fetchAllRows } from "./paging";
 
 export async function fetchOrders() {
@@ -134,4 +134,30 @@ export async function checkInOrder(order, session, guestDetails, amenities) {
     );
     check(eventsError);
   }
+}
+
+// ---------- REMOVING BILLED INVOICES ----------
+// All four go through database functions that check who is asking: the manager removes or
+// restores directly; sales / receptionist can only ask, and nothing changes until the
+// manager approves. Voided invoices are kept (status 'voided') and can be restored.
+export async function fetchRemovalRequests() {
+  const { data, error } = await supabase.from("invoice_removal_requests").select("*").order("requested_at", { ascending: false }).limit(200);
+  check(error);
+  return (data || []).map(mapRemovalRequest);
+}
+export async function requestInvoiceRemoval(orderIds, reason) {
+  const { error } = await supabase.rpc("request_invoice_removal", { p_order_ids: orderIds, p_reason: reason });
+  check(error);
+}
+export async function voidInvoices(orderIds, reason) {
+  const { error } = await supabase.rpc("void_invoices", { p_order_ids: orderIds, p_reason: reason });
+  check(error);
+}
+export async function restoreInvoices(orderIds) {
+  const { error } = await supabase.rpc("restore_invoices", { p_order_ids: orderIds });
+  check(error);
+}
+export async function decideInvoiceRemoval(requestId, approve, note) {
+  const { error } = await supabase.rpc("decide_invoice_removal", { p_request_id: requestId, p_approve: approve, p_note: note || null });
+  check(error);
 }

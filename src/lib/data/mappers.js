@@ -5,6 +5,22 @@
 export function mapProfile(p) {
   return { id: p.id, username: p.username, name: p.name, role: p.role, active: p.active, signupPending: !!p.signup_pending, activitySeenAt: p.activity_seen_at || null };
 }
+export function mapRemovalRequest(r) {
+  return {
+    id: r.id,
+    orderIds: r.order_ids || [],
+    label: r.label,
+    total: Number(r.total) || 0,
+    reason: r.reason,
+    status: r.status,
+    requestedBy: r.requested_by_name || "",
+    requestedById: r.requested_by,
+    requestedAt: r.requested_at,
+    decidedBy: r.decided_by_name || "",
+    decidedAt: r.decided_at,
+    decisionNote: r.decision_note || "",
+  };
+}
 export function mapAudit(r) {
   return {
     id: r.id,
@@ -47,6 +63,9 @@ export function mapOrder(row) {
     cancelledBy: row.cancelled_by_name || "",
     cancelledById: row.cancelled_by,
     cancelReason: row.cancel_reason,
+    voidedAt: row.voided_at || null,
+    voidedBy: row.voided_by_name || "",
+    voidReason: row.void_reason || "",
     guestDetails: row.guest_details,
     items: (row.order_items || []).map((it) => ({
       menuId: it.menu_item_id,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Loader2, LogOut } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, fetchMyNotifications, fetchFixedCosts, fetchAuditLog, markActivitySeen, subscribeToChanges } from "./lib/data";
+import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, fetchMyNotifications, fetchFixedCosts, fetchAuditLog, markActivitySeen, fetchRemovalRequests, subscribeToChanges } from "./lib/data";
 import { computeFlags } from "./lib/business";
 import { ROLES, LINES } from "./lib/constants";
 import { orderLabel } from "./lib/format";
@@ -56,6 +56,7 @@ export default function LaRocaSystem() {
   const [notifications, setNotifications] = useState([]);
   const [fixedCosts, setFixedCosts] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
+  const [removalRequests, setRemovalRequests] = useState([]);
   const [auditLimit, setAuditLimit] = useState(300);
   const [toasts, setToasts] = useState([]);
   const seenOrderIds = useRef(null); // null = "haven't taken a baseline snapshot yet" -> don't alert
@@ -79,13 +80,14 @@ export default function LaRocaSystem() {
 
   const loadData = useCallback(async () => {
     try {
-      const [o, so, m, inv, se, sa, u, n, fc, al] = await Promise.all([
+      const [o, so, m, inv, se, sa, u, n, fc, al, rr] = await Promise.all([
         fetchOrders(), fetchStorekeeperOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchStockAlerts(), fetchProfiles(),
         session ? fetchMyNotifications(session.id) : Promise.resolve([]),
         fetchFixedCosts(),
         session?.role === "manager" ? fetchAuditLog(auditLimit) : Promise.resolve([]),
+        ["manager", "sales"].includes(session?.role) ? fetchRemovalRequests() : Promise.resolve([]),
       ]);
-      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u); setNotifications(n); setFixedCosts(fc); setAuditLog(al);
+      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u); setNotifications(n); setFixedCosts(fc); setAuditLog(al); setRemovalRequests(rr);
     } catch (e) {
       pushError(e.message || "Couldn't load data — check your connection and try again.");
     }
@@ -147,7 +149,7 @@ export default function LaRocaSystem() {
     if (!session) return;
     loadData();
     return subscribeToChanges(
-      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles", "notifications", "notification_acks", "fixed_costs", "audit_log"],
+      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles", "notifications", "notification_acks", "fixed_costs", "audit_log", "invoice_removal_requests"],
       loadData
     );
   }, [session?.id, loadData]);
@@ -204,10 +206,13 @@ export default function LaRocaSystem() {
     );
   }
 
+  // Invoice-removal requests from sales waiting for the manager, shown on the Orders tab.
+  const pendingRemovals = session.role === "manager" ? removalRequests.filter((r) => r.status === "pending").length : 0;
+
   // Sign-ups waiting on the manager: surfaced on the tab itself so they don't sit unnoticed.
   const pendingSignups = users.filter((u) => u.signupPending).length;
   const tabsForRole = {
-    manager: [["dashboard", "Dashboard"], ["insights", "Insights"], ["staffactivity", activityUnread ? `Staff Activity (${activityUnread})` : "Staff Activity"], ["billing", "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
+    manager: [["dashboard", "Dashboard"], ["insights", "Insights"], ["staffactivity", activityUnread ? `Staff Activity (${activityUnread})` : "Staff Activity"], ["billing", pendingRemovals ? `Orders (${pendingRemovals} to approve)` : "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
     waiter: [["neworder", "Take Order"], ["readytoserve", "Ready to Serve"], ["activity", "My Activity"]],
     sales: [["neworder", "New Order / Booking"], ["readytoserve", "Ready to Serve"], ["checkin", "Check-in"], ["billing", "Orders & Billing"], ["activity", "My Activity"]],
     kitchen: [["kitchenqueue", "Kitchen Queue"], ["activity", "My Activity"]],
@@ -260,7 +265,7 @@ export default function LaRocaSystem() {
       {tab === "insights" && session.role === "manager" && <Insights orders={orders} menu={menu} inventory={inventory} stockEvents={stockEvents} fixedCosts={fixedCosts} />}
       {tab === "fixedcosts" && <FixedCosts fixedCosts={fixedCosts} session={session} refresh={loadData} onError={pushError} />}
       {tab === "users" && <UsersManager users={users} session={session} refreshUsers={loadData} onError={pushError} />}
-      {tab === "billing" && <BillingBoard orders={orders} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "billing" && <BillingBoard orders={orders} removalRequests={removalRequests} session={session} refresh={loadData} onError={pushError} />}
       {tab === "neworder" && <NewOrder menu={menu} orders={orders} session={session} refresh={loadData} onError={pushError} flags={flags} />}
       {tab === "readytoserve" && <ReadyToServe orders={orders} session={session} refresh={loadData} onError={pushError} flags={flags} />}
       {tab === "kitchenqueue" && <DeptQueue dept="kitchen" line="restaurant" orders={orders} session={session} refresh={loadData} onError={pushError} flags={flags} />}
