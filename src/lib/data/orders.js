@@ -79,7 +79,10 @@ export async function serveOrder(orderId, session) {
     .eq("id", orderId);
   check(error);
 }
-export async function billOrder(orderId, session, { paymentMethod, amountPaid }) {
+// `payments` is this order's share of how the bill was paid: [{ method, amount }, ...].
+// With more than one method the order's payment_method is recorded as "split".
+export async function billOrder(orderId, session, { payments }) {
+  const methods = [...new Set(payments.map((p) => p.method))];
   const { error } = await supabase
     .from("orders")
     .update({
@@ -87,8 +90,9 @@ export async function billOrder(orderId, session, { paymentMethod, amountPaid })
       billed_at: now(),
       billed_by: session.id,
       billed_by_name: session.name,
-      payment_method: paymentMethod,
-      amount_paid: amountPaid,
+      payment_method: methods.length > 1 ? "split" : methods[0] || null,
+      amount_paid: payments.reduce((s, p) => s + p.amount, 0),
+      payments,
     })
     .eq("id", orderId);
   check(error);

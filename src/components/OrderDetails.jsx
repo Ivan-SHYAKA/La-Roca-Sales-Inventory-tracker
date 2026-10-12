@@ -1,3 +1,4 @@
+import { paymentsOf, paymentText } from "../lib/payments";
 import { Card, SectionLabel, Badge, StatusBadge } from "./ui";
 import { LINES } from "../lib/constants";
 import { fmt, orderLabel } from "../lib/format";
@@ -27,7 +28,7 @@ export function OrderDetailsModal({ order, onClose }) {
           <div>Placed by {order.placedBy || "—"} · {new Date(order.placedAt).toLocaleString()}</div>
           {order.readyAt && <div>Marked ready by {order.readyBy || "—"} · {new Date(order.readyAt).toLocaleString()}</div>}
           {order.servedAt && <div>Served by {order.servedBy || "—"} · {new Date(order.servedAt).toLocaleString()}</div>}
-          {order.billedAt && <div>Billed by {order.billedBy || "—"} · {new Date(order.billedAt).toLocaleString()} — {order.paymentMethod?.replace("_", " ")}, RWF {fmt(order.amountPaid)} received</div>}
+          {order.billedAt && <div>Billed by {order.billedBy || "—"} · {new Date(order.billedAt).toLocaleString()} — {paymentText(paymentsOf(order), fmt) || order.paymentMethod?.replace("_", " ")}, RWF {fmt(order.amountPaid)} received</div>}
           {order.cancelledAt && <div style={{ color: "var(--ember)" }}>Cancelled by {order.cancelledBy || "—"} · {new Date(order.cancelledAt).toLocaleString()} — {order.cancelReason}</div>}
         </div>
         <div className="flex justify-end mt-4"><button onClick={onClose} className="px-4 py-2 rounded text-sm border border-[var(--basalt)]/20">Close</button></div>

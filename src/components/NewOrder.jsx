@@ -15,6 +15,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
   const draftKey = `lr-draft-${session.username}`;
   const [client, setClient] = useState("");
   const [tableNumber, setTableNumber] = useState("");
+  const [billChoice, setBillChoice] = useState(""); // "" = not chosen, "new", or an open bill's group id
   const [phone, setPhone] = useState("");
   const [line, setLine] = useState("restaurant"); // which category tab is currently being browsed
   const [search, setSearch] = useState("");
@@ -32,6 +33,8 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
     if (d) { setClient(d.client || ""); setTableNumber(d.tableNumber || ""); setPhone(d.phone || ""); setLine(d.line || "restaurant"); setCart(d.cart || []); }
   }, []);
   useEffect(() => { draftSet(draftKey, { client, tableNumber, phone, line, cart }); }, [client, tableNumber, phone, line, cart]);
+  // A different table means a different set of open bills, so the choice starts again.
+  useEffect(() => { setBillChoice(""); }, [tableNumber]);
 
   useEffect(() => {
     if (!justPlaced) return;
@@ -77,13 +80,38 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
   }, [orders, session.id]);
 
   // Everything that has to be in place before an order can be sent.
+  // Open (not yet billed) bills at this table that this order could be added to. Each bill is
+  // one customer's orders; adding to the wrong one would mix two customers' invoices, so the
+  // waiter has to choose when there is more than one option.
+  const openBills = useMemo(() => {
+    const t = tableNumber.trim().toLowerCase();
+    if (!t) return [];
+    const by = new Map();
+    (orders || [])
+      .filter((o) => o.groupId && (o.tableNumber || "").toLowerCase() === t && ["placed", "ready", "served"].includes(o.status))
+      .forEach((o) => {
+        const g = by.get(o.groupId) || { groupId: o.groupId, client: "", phone: "", total: 0, itemCount: 0, placedAt: o.placedAt };
+        g.total += o.total;
+        g.itemCount += o.items.reduce((s, i) => s + i.qty, 0);
+        if (!g.client && o.client) g.client = o.client;
+        if (!g.phone && o.phone) g.phone = o.phone;
+        if (new Date(o.placedAt) < new Date(g.placedAt)) g.placedAt = o.placedAt;
+        by.set(o.groupId, g);
+      });
+    return [...by.values()].sort((a, b) => new Date(a.placedAt) - new Date(b.placedAt));
+  }, [orders, tableNumber]);
+  const needsBillChoice = openBills.length > 0 && !billChoice;
+  const attachTo = openBills.find((b) => b.groupId === billChoice) || null;
+
   const missing = [];
   if (!tableNumber.trim()) missing.push(line === "accommodations" ? "room number" : "table");
+  if (needsBillChoice) missing.push("which bill this is for");
   if (cart.length === 0) missing.push("at least one item");
   if (isStaffOrder && !isNonNegative(staffTotal)) missing.push("the reduced total");
 
   const submit = async () => {
     if (!tableNumber.trim()) { onError?.("Enter the table/room number before placing the order."); return; }
+    if (needsBillChoice) { onError?.("Choose which bill this order is for, or start a new bill."); return; }
     if (cart.length === 0) { onError?.("Add at least one item to the cart before placing the order."); return; }
     if (isStaffOrder && (!staffTotal || Number(staffTotal) < 0)) { onError?.("Enter the reduced price for this staff order."); return; }
     setBusy(true);
@@ -101,7 +129,10 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
       const groups = {};
       cart.forEach((x) => { (groups[x.line] ||= []).push(x); });
       const lineKeys = Object.keys(groups);
-      const groupId = crypto.randomUUID();
+      // Added to an existing bill: reuse its group id (and customer), so it stays on that bill.
+      const groupId = attachTo ? attachTo.groupId : crypto.randomUUID();
+      const billClient = attachTo ? attachTo.client : client.trim();
+      const billPhone = attachTo ? attachTo.phone : phone.trim();
       // A staff order's reduced total is entered once for the whole cart, so when it spans
       // multiple lines each line gets its proportional share of that reduced total rather
       // than the full menu price.
@@ -109,7 +140,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
       for (const ln of lineKeys) {
         const lineMenuTotal = groups[ln].reduce((s, x) => s + x.price * x.qty, 0);
         const lineStaffTotal = reducedTotal == null ? null : Math.round(reducedTotal * (lineMenuTotal / total));
-        await placeOrder({ client: client.trim(), tableNumber: tableNumber.trim(), phone: phone.trim(), line: ln, cart: groups[ln], session, groupId, isStaffOrder, staffTotal: lineStaffTotal });
+        await placeOrder({ client: billClient, tableNumber: tableNumber.trim(), phone: billPhone, line: ln, cart: groups[ln], session, groupId, isStaffOrder, staffTotal: lineStaffTotal });
       }
       setJustPlaced({
         client: client.trim(),
@@ -122,7 +153,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
           count: groups[ln].reduce((s, x) => s + x.qty, 0),
         })),
       });
-      setClient(""); setTableNumber(""); setPhone(""); setCart([]); setSearch(""); draftClear(draftKey);
+      setClient(""); setTableNumber(""); setPhone(""); setCart([]); setSearch(""); setBillChoice(""); draftClear(draftKey);
       setIsStaffOrder(false); setStaffTotal("");
       setKiosk(false); // hand the tablet back to staff view once the client's order is in
       await refresh();
@@ -135,6 +166,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
 
   const enterKiosk = () => {
     if (!tableNumber.trim()) { onError?.("Set the table/room number first, then hand the tablet to the client."); return; }
+    if (needsBillChoice) { onError?.("Choose which bill this order is for (or a new bill) before handing the tablet over."); return; }
     setKiosk(true);
   };
 
@@ -279,7 +311,28 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          {openBills.length > 0 && (
+            <div className="mb-4 p-3 rounded-md border-2" style={{ borderColor: needsBillChoice ? "var(--ember)" : "rgba(38,34,29,0.12)" }}>
+              <div className="text-xs font-semibold mb-2">Which bill is this for?<span style={{ color: "var(--ember)" }}> *</span></div>
+              <div className="space-y-1.5">
+                {openBills.map((b, i) => (
+                  <button key={b.groupId} type="button" onClick={() => setBillChoice(b.groupId)}
+                    className="w-full text-left px-3 py-2 rounded border-2 text-sm"
+                    style={{ borderColor: billChoice === b.groupId ? "var(--ember)" : "rgba(38,34,29,0.15)", background: billChoice === b.groupId ? "rgba(181,74,40,0.08)" : "white" }}>
+                    <span className="font-medium">{b.client || `Bill ${i + 1}`}</span>
+                    <span className="text-xs text-[var(--basalt)]/60"> · {b.itemCount} item{b.itemCount === 1 ? "" : "s"} · RWF {fmt(b.total)} · started {new Date(b.placedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  </button>
+                ))}
+                <button type="button" onClick={() => setBillChoice("new")}
+                  className="w-full text-left px-3 py-2 rounded border-2 text-sm font-medium"
+                  style={{ borderColor: billChoice === "new" ? "var(--ember)" : "rgba(38,34,29,0.15)", background: billChoice === "new" ? "rgba(181,74,40,0.08)" : "white" }}>
+                  + New bill — another customer
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!attachTo && (<div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div>
               <label className="text-xs text-[var(--basalt)]/60">Client name (optional)</label>
               <Input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Jean Baptiste" />
@@ -288,7 +341,7 @@ export function NewOrder({ menu, orders, session, refresh, onError, flags = [] }
               <label className="text-xs text-[var(--basalt)]/60">Phone (optional)</label>
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
-          </div>
+          </div>)}
 
           {lineTabs(false)}
 

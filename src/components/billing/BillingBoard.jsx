@@ -4,7 +4,8 @@ import { Card, SectionLabel, Badge, StatusBadge, PrimaryBtn } from "../ui";
 import { LINES } from "../../lib/constants";
 import { fmt, orderLabel } from "../../lib/format";
 import { billOrder, cancelOrder, requestInvoiceRemoval, voidInvoices, restoreInvoices, decideInvoiceRemoval } from "../../lib/data";
-import { groupOrders, summarize, distributeAmount } from "./groupOrders";
+import { groupOrders, summarize } from "./groupOrders";
+import { splitPaymentsAcrossOrders, sumPayments, paymentText } from "../../lib/payments";
 import { CancelModal } from "./CancelModal";
 import { BillingModal } from "./BillingModal";
 import { GroupDetailsModal } from "./GroupDetailsModal";
@@ -60,6 +61,23 @@ export function BillingBoard({ orders, removalRequests = [], session, refresh, o
     [orders]
   );
 
+  // Several unpaid bills at one table are told apart by customer name, or "Bill 2", "Bill 3"...
+  const billNumber = useMemo(() => {
+    const open = groups.filter((g) => g.tableNumber && !["billed", "cancelled"].includes(g.status));
+    const byTable = {};
+    open.forEach((g) => (byTable[g.tableNumber] ||= []).push(g));
+    const num = {};
+    Object.values(byTable).forEach((list) => {
+      if (list.length < 2) return;
+      [...list].sort((a, b) => new Date(a.placedAt) - new Date(b.placedAt)).forEach((g, i) => { num[g.key] = i + 1; });
+    });
+    return num;
+  }, [groups]);
+  const billName = (g) => {
+    const name = g.client && g.client !== g.tableNumber ? ` · ${g.client}` : "";
+    const n = billNumber[g.key] ? ` · Bill ${billNumber[g.key]}` : "";
+    return `${orderLabel(g)}${name}${n}`;
+  };
   const idsOf = (g, status) => g.orders.filter((o) => o.status === status).map((o) => o.id);
   const overlaps = (r, ids) => r.orderIds.some((id) => ids.includes(id));
   const pending = removalRequests.filter((r) => r.status === "pending");
@@ -75,13 +93,18 @@ export function BillingBoard({ orders, removalRequests = [], session, refresh, o
         onConfirm={async (payment) => {
           try {
             const toBill = billingGroup.activeOrders;
-            const shares = distributeAmount(payment.amountPaid, toBill);
+            // Each method's amount is shared across the bill's orders by their totals.
+            const shares = splitPaymentsAcrossOrders(payment.payments, toBill);
             for (let i = 0; i < toBill.length; i++) {
-              await billOrder(toBill[i].id, session, { paymentMethod: payment.paymentMethod, amountPaid: shares[i] });
+              await billOrder(toBill[i].id, session, { payments: shares[i] });
             }
             setInvoiceGroup({
               ...billingGroup,
-              orders: toBill.map((o, i) => ({ ...o, status: "billed", paymentMethod: payment.paymentMethod, amountPaid: shares[i] })),
+              orders: toBill.map((o, i) => ({
+                ...o, status: "billed", payments: shares[i],
+                paymentMethod: payment.payments.length > 1 ? "split" : payment.payments[0].method,
+                amountPaid: shares[i].reduce((s, p) => s + p.amount, 0),
+              })),
             });
             setBillingGroup(null);
             await refresh();
@@ -145,7 +168,8 @@ export function BillingBoard({ orders, removalRequests = [], session, refresh, o
               return (
                 <tr key={g.key} className="border-b border-[var(--basalt)]/5">
                   <td className="py-2 pr-3">
-                    <button onClick={() => setDetailsGroup(g)} className="flex items-center gap-1 hover:underline">{orderLabel(g)} <Info size={11} className="text-[var(--basalt)]/30" /></button>
+                    <button onClick={() => setDetailsGroup(g)} className="flex items-center gap-1 hover:underline">{billName(g)} <Info size={11} className="text-[var(--basalt)]/30" /></button>
+                    {g.isBilled && sumPayments(g.orders).length > 0 && <div className="text-[11px] text-[var(--basalt)]/50 mt-0.5">{paymentText(sumPayments(g.orders), fmt)}</div>}
                   </td>
                   <td className="py-2 pr-3 flex gap-1 flex-wrap">{g.lines.map((l) => <Badge key={l} color={LINES[l].color}>{LINES[l].label}</Badge>)}</td>
                   <td className="py-2 pr-3 font-mono text-xs">RWF {fmt(g.total)}</td>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Loader2, LogOut } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, fetchMyNotifications, fetchFixedCosts, fetchAuditLog, markActivitySeen, fetchRemovalRequests, subscribeToChanges } from "./lib/data";
+import { fetchProfile, fetchProfiles, fetchOrders, fetchStorekeeperOrders, fetchMenu, fetchInventory, fetchStockEvents, fetchStockAlerts, fetchMyNotifications, fetchFixedCosts, fetchAuditLog, markActivitySeen, fetchRemovalRequests, fetchLoans, fetchCashBook, subscribeToChanges } from "./lib/data";
 import { computeFlags } from "./lib/business";
 import { ROLES, LINES } from "./lib/constants";
 import { orderLabel } from "./lib/format";
@@ -18,6 +18,8 @@ import { StockForm } from "./components/StockForm";
 import { InventoryView } from "./components/InventoryView";
 import { DailySheet } from "./components/DailySheet";
 import { StaffActivity } from "./components/StaffActivity";
+import { Loans } from "./components/Loans";
+import { CashBook } from "./components/CashBook";
 import { DailyStockReport } from "./components/DailyStockReport";
 import { StockAlertsBanner } from "./components/StockAlertsBanner";
 import { ActivityLog } from "./components/ActivityLog";
@@ -57,6 +59,9 @@ export default function LaRocaSystem() {
   const [fixedCosts, setFixedCosts] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
   const [removalRequests, setRemovalRequests] = useState([]);
+  const [loans, setLoans] = useState([]);
+  const [loanRepayments, setLoanRepayments] = useState([]);
+  const [cashDays, setCashDays] = useState([]);
   const [auditLimit, setAuditLimit] = useState(300);
   const [toasts, setToasts] = useState([]);
   const seenOrderIds = useRef(null); // null = "haven't taken a baseline snapshot yet" -> don't alert
@@ -80,14 +85,16 @@ export default function LaRocaSystem() {
 
   const loadData = useCallback(async () => {
     try {
-      const [o, so, m, inv, se, sa, u, n, fc, al, rr] = await Promise.all([
+      const [o, so, m, inv, se, sa, u, n, fc, al, rr, ln, cb] = await Promise.all([
         fetchOrders(), fetchStorekeeperOrders(), fetchMenu(), fetchInventory(), fetchStockEvents(), fetchStockAlerts(), fetchProfiles(),
         session ? fetchMyNotifications(session.id) : Promise.resolve([]),
         fetchFixedCosts(),
         session?.role === "manager" ? fetchAuditLog(auditLimit) : Promise.resolve([]),
         ["manager", "sales"].includes(session?.role) ? fetchRemovalRequests() : Promise.resolve([]),
+        session?.role === "manager" ? fetchLoans() : Promise.resolve({ loans: [], repayments: [] }),
+        session?.role === "manager" ? fetchCashBook() : Promise.resolve([]),
       ]);
-      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u); setNotifications(n); setFixedCosts(fc); setAuditLog(al); setRemovalRequests(rr);
+      setOrders(o); setStoreOrders(so); setMenu(m); setInventory(inv); setStockEvents(se); setStockAlerts(sa); setUsers(u); setNotifications(n); setFixedCosts(fc); setAuditLog(al); setRemovalRequests(rr); setLoans(ln.loans); setLoanRepayments(ln.repayments); setCashDays(cb);
     } catch (e) {
       pushError(e.message || "Couldn't load data — check your connection and try again.");
     }
@@ -149,7 +156,7 @@ export default function LaRocaSystem() {
     if (!session) return;
     loadData();
     return subscribeToChanges(
-      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles", "notifications", "notification_acks", "fixed_costs", "audit_log", "invoice_removal_requests"],
+      ["orders", "order_items", "menu_items", "recipe_ingredients", "inventory", "stock_events", "stock_alerts", "profiles", "notifications", "notification_acks", "fixed_costs", "audit_log", "invoice_removal_requests", "loans", "loan_repayments", "cash_book_days"],
       loadData
     );
   }, [session?.id, loadData]);
@@ -212,7 +219,7 @@ export default function LaRocaSystem() {
   // Sign-ups waiting on the manager: surfaced on the tab itself so they don't sit unnoticed.
   const pendingSignups = users.filter((u) => u.signupPending).length;
   const tabsForRole = {
-    manager: [["dashboard", "Dashboard"], ["insights", "Insights"], ["staffactivity", activityUnread ? `Staff Activity (${activityUnread})` : "Staff Activity"], ["billing", pendingRemovals ? `Orders (${pendingRemovals} to approve)` : "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
+    manager: [["dashboard", "Dashboard"], ["insights", "Insights"], ["staffactivity", activityUnread ? `Staff Activity (${activityUnread})` : "Staff Activity"], ["billing", pendingRemovals ? `Orders (${pendingRemovals} to approve)` : "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["cashbook", "Cash & MoMo"], ["loans", "Loans"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
     waiter: [["neworder", "Take Order"], ["readytoserve", "Ready to Serve"], ["activity", "My Activity"]],
     sales: [["neworder", "New Order / Booking"], ["readytoserve", "Ready to Serve"], ["checkin", "Check-in"], ["billing", "Orders & Billing"], ["activity", "My Activity"]],
     kitchen: [["kitchenqueue", "Kitchen Queue"], ["activity", "My Activity"]],
@@ -257,6 +264,8 @@ export default function LaRocaSystem() {
 
       {tab === "dashboard" && <Dashboard orders={orders} inventory={inventory} stockEvents={stockEvents} menu={menu} flags={flags} fixedCosts={fixedCosts} />}
       {tab === "menu" && <MenuManager menu={menu} inventory={inventory} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "cashbook" && session.role === "manager" && <CashBook orders={orders} days={cashDays} session={session} refresh={loadData} onError={pushError} />}
+      {tab === "loans" && session.role === "manager" && <Loans loans={loans} repayments={loanRepayments} session={session} refresh={loadData} onError={pushError} />}
       {tab === "staffactivity" && session.role === "manager" && (
         <StaffActivity entries={auditLog} seenAt={activitySeenAt} myId={session.id} canLoadMore={auditLog.length >= auditLimit}
           onLoadMore={() => setAuditLimit((n) => n + 300)}

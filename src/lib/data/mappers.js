@@ -5,6 +5,39 @@
 export function mapProfile(p) {
   return { id: p.id, username: p.username, name: p.name, role: p.role, active: p.active, signupPending: !!p.signup_pending, activitySeenAt: p.activity_seen_at || null };
 }
+export function mapLoan(r) {
+  return {
+    id: r.id,
+    person: r.person_name,
+    amount: Number(r.amount) || 0,
+    date: r.loan_date,
+    note: r.note || "",
+    createdBy: r.created_by_name || "",
+    createdAt: r.created_at,
+  };
+}
+export function mapLoanRepayment(r) {
+  return {
+    id: r.id,
+    loanId: r.loan_id,
+    amount: Number(r.amount) || 0,
+    paidOn: r.paid_on,
+    note: r.note || "",
+    createdBy: r.created_by_name || "",
+  };
+}
+export function mapCashDay(r) {
+  const n = (v) => (v == null ? null : Number(v));
+  return {
+    day: r.day,
+    openingCash: n(r.opening_cash),
+    openingMomo: n(r.opening_momo),
+    closingCash: n(r.closing_cash),
+    closingMomo: n(r.closing_momo),
+    note: r.note || "",
+    updatedBy: r.updated_by_name || "",
+  };
+}
 export function mapRemovalRequest(r) {
   return {
     id: r.id,
@@ -59,6 +92,7 @@ export function mapOrder(row) {
     billedById: row.billed_by,
     paymentMethod: row.payment_method,
     amountPaid: row.amount_paid == null ? null : Number(row.amount_paid),
+    payments: Array.isArray(row.payments) ? row.payments : null,
     cancelledAt: row.cancelled_at,
     cancelledBy: row.cancelled_by_name || "",
     cancelledById: row.cancelled_by,

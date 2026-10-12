@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ShoppingBag, Package, BookOpen, UserCog, ChevronDown, CheckCheck } from "lucide-react";
+import { ShoppingBag, Package, BookOpen, UserCog, Wallet, ChevronDown, CheckCheck } from "lucide-react";
 import { Card, SectionLabel, Input, Select, PrimaryBtn } from "./ui";
 import { LINES, ROLES } from "../lib/constants";
 import { fmt } from "../lib/format";
@@ -9,8 +9,9 @@ const CATEGORIES = {
   stock: { label: "Stock", color: "#46583F", icon: Package },
   menu: { label: "Menu & prices", color: "#B8923F", icon: BookOpen },
   account: { label: "Accounts", color: "#26221D", icon: UserCog },
+  money: { label: "Money", color: "#8A6FB0", icon: Wallet },
 };
-const PAYMENT = { cash: "cash", mobile_money: "mobile money", card: "card" };
+const PAYMENT = { cash: "cash", mobile_money: "MoMo", card: "card", split: "cash + MoMo" };
 const STOCK_REASON = { restock: "In", usage: "Out", waste: "Waste", spoilage: "Spoiled", missing: "Missing", other: "Other", adjustment: "Stock count correction" };
 const FIELD_VALUE = (field, v) => {
   if (v === true) return "yes";
@@ -57,6 +58,20 @@ function detailLines(a) {
     case "cost_removed":
       out.push(`${d.name}: RWF ${fmt(d.amount)} ${d.frequency === "monthly" ? "every month" : "one time"}`);
       break;
+    case "loan_added":
+    case "loan_removed":
+      out.push(`${d.name}: RWF ${fmt(d.amount)}${d.date ? ` · ${d.date}` : ""}${d.note ? ` — ${d.note}` : ""}`);
+      break;
+    case "loan_repayment":
+      out.push(`${d.name} repaid RWF ${fmt(d.amount)} of RWF ${fmt(d.borrowed)}; RWF ${fmt(d.remaining)} still owed${d.note ? ` — ${d.note}` : ""}`);
+      break;
+    case "cash_book_saved": {
+      const money = (v) => (v == null ? "—" : `RWF ${fmt(v)}`);
+      out.push(`Opening: cash ${money(d.opening_cash)}, MoMo ${money(d.opening_momo)}`);
+      out.push(`Closing counted: cash ${money(d.closing_cash)}, MoMo ${money(d.closing_momo)}`);
+      if (d.note) out.push(`Note: ${d.note}`);
+      break;
+    }
     case "account_updated":
     case "password_reset":
       out.push(...changes(d.changes));
@@ -74,7 +89,8 @@ function detailLines(a) {
         if ((d.lines || []).length) out.push(d.lines.map((l) => LINES[l]?.label || l).join(" + "));
         if (d.client && d.client !== d.table) out.push(`Client: ${d.client}`);
         if (d.staff_order) out.push("Staff personal order (reduced price)");
-        if (d.payment_method) out.push(`Paid ${d.amount_paid != null ? `RWF ${fmt(d.amount_paid)} ` : ""}by ${PAYMENT[d.payment_method] || d.payment_method}`);
+        if (Array.isArray(d.payments) && d.payments.length) out.push(`Paid ${d.payments.map((p) => `${PAYMENT[p.method] || p.method} RWF ${fmt(p.amount)}`).join(" + ")}`);
+        else if (d.payment_method) out.push(`Paid ${d.amount_paid != null ? `RWF ${fmt(d.amount_paid)} ` : ""}by ${PAYMENT[d.payment_method] || d.payment_method}`);
         if (d.cancel_reason) out.push(`Reason: ${d.cancel_reason}`);
         if (d.void_reason) out.push(`Reason: ${d.void_reason}`);
         if (a.action === "invoice_removal_requested" || a.action === "invoice_removal_rejected") {

@@ -26,7 +26,7 @@ function buildInvoicePdf(order, lineLabel) {
   doc.setFont("helvetica", "bold");
   doc.text(`Total: RWF ${fmt(order.total)}`, 20, y); y += 18;
   doc.setFont("helvetica", "normal"); doc.setFontSize(8);
-  if (order.paymentMethod) { doc.text(`Paid via ${order.paymentMethod.replace("_", " ")} · RWF ${fmt(order.amountPaid)} received`, 20, y); y += 12; }
+  if (order.paymentMethod) { doc.text(`Paid: ${order.paymentMethod} · RWF ${fmt(order.amountPaid)} received`, 20, y); y += 12; }
   doc.text(`Placed ${new Date(order.placedAt).toLocaleString()}`, 20, y); y += 12;
   if (order.servedAt) doc.text(`Served ${new Date(order.servedAt).toLocaleString()}`, 20, y);
   return doc;

@@ -3,10 +3,13 @@ import { Printer, FileDown } from "lucide-react";
 import { LINES } from "../../lib/constants";
 import { fmt, orderLabel } from "../../lib/format";
 import { saveInvoicePdf } from "../../lib/pdf";
+import { sumPayments, paymentText } from "../../lib/payments";
 
 export function InvoiceModal({ group, onClose, onError }) {
   const [saving, setSaving] = useState(false);
-  const paymentMethod = group.orders.find((o) => o.paymentMethod)?.paymentMethod;
+  const payments = sumPayments(group.orders);
+  const paidText = paymentText(payments, fmt);
+  const paymentMethod = paidText;
   const amountPaid = group.orders.reduce((s, o) => s + (o.amountPaid || 0), 0);
   const lineLabel = group.lines.map((l) => LINES[l].label).join(" + ");
   const mixed = group.lines.length > 1;
@@ -45,7 +48,7 @@ export function InvoiceModal({ group, onClose, onError }) {
           ))}</tbody>
         </table>
         <div className="flex justify-between font-semibold border-t border-black/10 pt-2"><span>Total</span><span className="font-mono">RWF {fmt(group.total)}</span></div>
-        {paymentMethod && <p className="text-sm mt-2">Paid via {paymentMethod.replace("_", " ")} · RWF {fmt(amountPaid)} received</p>}
+        {paidText && <p className="text-sm mt-2">Paid: {paidText} · RWF {fmt(amountPaid)} received</p>}
         <p className="text-xs text-[var(--basalt)]/40 mt-4">Placed {new Date(group.placedAt).toLocaleString()}{group.servedAt && ` · Served ${new Date(group.servedAt).toLocaleString()}`}</p>
         <div className="flex gap-2 mt-6 no-print">
           <button onClick={() => window.print()} className="flex-1 py-2 rounded text-sm font-medium text-white flex items-center justify-center gap-1.5" style={{ background: "var(--basalt)" }}><Printer size={14} /> Print</button>

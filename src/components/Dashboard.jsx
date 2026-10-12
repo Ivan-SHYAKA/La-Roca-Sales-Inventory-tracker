@@ -4,6 +4,7 @@ import { Card, SectionLabel, Badge, FlagsPanel } from "./ui";
 import { LINES } from "../lib/constants";
 import { reconciliation, dailyStockReport, profitLossForPeriod } from "../lib/business";
 import { fmt } from "../lib/format";
+import { paymentsOf, paymentText, methodLabel } from "../lib/payments";
 import { toCsv, downloadCsv } from "../lib/csv";
 
 function todayStr() {
@@ -215,7 +216,7 @@ export function Dashboard({ orders, inventory, stockEvents, menu, flags, fixedCo
       { label: "Line", get: (o) => LINES[o.line].label },
       { label: "Staff order", get: (o) => (o.isStaffOrder ? "Yes" : "No") },
       { label: "Total (RWF)", get: (o) => o.total },
-      { label: "Payment method", get: (o) => o.paymentMethod || "" },
+      { label: "Payment method", get: (o) => (paymentsOf(o).length > 1 ? paymentText(paymentsOf(o), fmt) : methodLabel(o.paymentMethod) || "") },
       { label: "Billed by", get: (o) => o.billedBy || "" },
     ]);
     downloadCsv(`orders_${startDate}_to_${endDate}.csv`, csv);
