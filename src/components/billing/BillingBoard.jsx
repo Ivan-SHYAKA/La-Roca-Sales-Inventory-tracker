@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { Printer, Info, ChevronDown, Undo2 } from "lucide-react";
-import { Card, SectionLabel, Badge, StatusBadge, PrimaryBtn } from "../ui";
+import { Printer, Info, ChevronDown, ChevronLeft, ChevronRight, Undo2 } from "lucide-react";
+import { Card, SectionLabel, Badge, StatusBadge, PrimaryBtn, Input } from "../ui";
+import { dayStr } from "../../lib/cashBook";
 import { LINES } from "../../lib/constants";
 import { fmt, orderLabel } from "../../lib/format";
 import { billOrder, cancelOrder, requestInvoiceRemoval, voidInvoices, restoreInvoices, decideInvoiceRemoval } from "../../lib/data";
@@ -21,6 +22,8 @@ export function BillingBoard({ orders, removalRequests = [], session, refresh, o
   const [restoring, setRestoring] = useState(null);   // removed group being restored
   const [answering, setAnswering] = useState(null);   // { request, approve }
   const [showRemoved, setShowRemoved] = useState(false);
+  const todayKey = dayStr(new Date());
+  const [day, setDay] = useState(todayKey); // the orders list is shown one day at a time
   const [busy, setBusy] = useState(false);
   const isManager = session.role === "manager";
 
@@ -55,6 +58,26 @@ export function BillingBoard({ orders, removalRequests = [], session, refresh, o
     () => groupOrders(orders.filter((o) => o.status !== "voided")).map(summarize).sort((a, b) => new Date(b.placedAt) - new Date(a.placedAt)),
     [orders]
   );
+  // One day at a time. A bill belongs to the day it was placed, and also to the day it was paid
+  // (placed late at night, paid after midnight). Bills from earlier days that are still open
+  // (not yet billed or cancelled) always show on today's list so nothing is left behind.
+  const dayGroups = useMemo(
+    () => groups.filter((g) => dayStr(new Date(g.placedAt)) === day || (g.billedAt && dayStr(new Date(g.billedAt)) === day)),
+    [groups, day]
+  );
+  const carriedOver = useMemo(
+    () => (day === todayKey
+      ? groups.filter((g) => dayStr(new Date(g.placedAt)) < todayKey && !["billed", "cancelled"].includes(g.status) && !(g.billedAt && dayStr(new Date(g.billedAt)) === day))
+      : []),
+    [groups, day, todayKey]
+  );
+  const shownGroups = [...carriedOver, ...dayGroups.filter((g) => !carriedOver.includes(g))];
+  const billedThatDay = dayGroups.filter((g) => g.isBilled && g.billedAt && dayStr(new Date(g.billedAt)) === day);
+  const shiftDay = (n) => {
+    const [y, m, d] = day.split("-").map(Number);
+    const next = dayStr(new Date(y, m - 1, d + n));
+    if (next <= todayKey) setDay(next);
+  };
   const removedGroups = useMemo(
     () => groupOrders(orders.filter((o) => o.status === "voided")).map(summarize)
       .sort((a, b) => new Date(b.orders[0].voidedAt || 0) - new Date(a.orders[0].voidedAt || 0)),
@@ -156,13 +179,29 @@ export function BillingBoard({ orders, removalRequests = [], session, refresh, o
 
       <Card>
         <SectionLabel>Orders pipeline</SectionLabel>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="p-2 rounded border border-[var(--basalt)]/20"><ChevronLeft size={16} /></button>
+          <Input type="date" value={day} max={todayKey} onChange={(e) => e.target.value && setDay(e.target.value)} className="!mt-0 max-w-[170px]" />
+          <button onClick={() => shiftDay(1)} disabled={day >= todayKey} aria-label="Next day" className="p-2 rounded border border-[var(--basalt)]/20 disabled:opacity-40"><ChevronRight size={16} /></button>
+          {day !== todayKey && <button onClick={() => setDay(todayKey)} className="px-3 py-2 rounded text-sm border border-[var(--basalt)]/20">Today</button>}
+          <span className="text-sm text-[var(--basalt)]/70 ml-1">
+            <b>{day === todayKey ? "Today" : new Date(day + "T12:00:00").toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}</b>
+            {" · "}{dayGroups.length} order{dayGroups.length === 1 ? "" : "s"}
+            {" · "}RWF {fmt(billedThatDay.reduce((s, g) => s + g.total, 0))} billed
+          </span>
+        </div>
+        {carriedOver.length > 0 && (
+          <p className="text-xs mb-3 px-3 py-2 rounded" style={{ background: "rgba(184,146,63,0.15)" }}>
+            {carriedOver.length} order{carriedOver.length === 1 ? "" : "s"} from earlier days {carriedOver.length === 1 ? "is" : "are"} still open and shown first.
+          </p>
+        )}
         <p className="text-xs text-[var(--basalt)]/50 mb-3">Orders route straight to the kitchen or barista when a waiter places them — nothing to confirm here. A table's items across different lines are billed together as one receipt once everything for that table has been served.</p>
         <table className="w-full text-sm">
           <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10">
             <th className="py-2 pr-3">Client</th><th className="py-2 pr-3">Line</th><th className="py-2 pr-3">Total</th><th className="py-2 pr-3">Status</th><th className="py-2 pr-3">Waiter</th><th className="py-2 pr-3">Placed</th><th></th>
           </tr></thead>
           <tbody>
-            {groups.map((g) => {
+            {shownGroups.map((g) => {
               const waiting = g.isBilled ? pendingFor(g) : null;
               const refused = g.isBilled && !waiting ? rejectedFor(g) : null;
               return (
@@ -190,7 +229,7 @@ export function BillingBoard({ orders, removalRequests = [], session, refresh, o
             })}
           </tbody>
         </table>
-        {groups.length === 0 && <p className="text-sm text-[var(--basalt)]/50">No orders yet.</p>}
+        {shownGroups.length === 0 && <p className="text-sm text-[var(--basalt)]/50">{groups.length === 0 ? "No orders yet." : "No orders on this day."}</p>}
       </Card>
 
       {removedGroups.length > 0 && (

@@ -2,16 +2,23 @@ import { supabase } from "../supabaseClient";
 import { mapNotification, check } from "./mappers";
 import { fetchAllRows } from "./paging";
 
-// RLS already scopes `notifications` to rows matching the caller's role, so this only
-// needs to subtract the ones this specific user has already acknowledged — two people
-// sharing a role (e.g. two kitchen staff) each get their own copy of the same broadcast
-// notification and must acknowledge it independently.
-export async function fetchMyNotifications(userId) {
-  const [notifs, acks] = await Promise.all([
-    fetchAllRows(() => supabase.from("notifications").select("*").order("created_at", { ascending: true }).order("id")),
-    fetchAllRows(() => supabase.from("notification_acks").select("notification_id").eq("user_id", userId).order("notification_id")),
-  ]);
-  const ackedIds = new Set(acks.map((a) => a.notification_id));
+// A notification is addressed to a role, and it is "done" for the whole role as soon as one
+// person acknowledges it -- or, for a new order, as soon as the order has been handled (the
+// database marks it resolved). RLS lets people see their colleagues' acknowledgements, so a
+// notification someone else already dealt with never pops up again for the rest of the role.
+export async function fetchMyNotifications() {
+  const notifs = await fetchAllRows(() =>
+    supabase.from("notifications").select("*").is("resolved_at", null).order("created_at", { ascending: true }).order("id")
+  );
+  if (notifs.length === 0) return [];
+  // Which of these anyone has already acknowledged (in chunks to keep the request short).
+  const ackedIds = new Set();
+  for (let i = 0; i < notifs.length; i += 150) {
+    const ids = notifs.slice(i, i + 150).map((n) => n.id);
+    const { data, error } = await supabase.from("notification_acks").select("notification_id").in("notification_id", ids);
+    check(error);
+    (data || []).forEach((a) => ackedIds.add(a.notification_id));
+  }
   return notifs.filter((n) => !ackedIds.has(n.id)).map(mapNotification);
 }
 
