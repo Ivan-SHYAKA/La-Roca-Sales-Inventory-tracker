@@ -26,3 +26,12 @@ export async function acknowledgeNotification(notificationId, userId) {
   const { error } = await supabase.from("notification_acks").insert({ notification_id: notificationId, user_id: userId });
   check(error);
 }
+
+// "Mark all as read" from the bell: one request, and ones already acknowledged are skipped.
+export async function acknowledgeNotifications(notificationIds, userId) {
+  if (!notificationIds.length) return;
+  const { error } = await supabase
+    .from("notification_acks")
+    .upsert(notificationIds.map((id) => ({ notification_id: id, user_id: userId })), { onConflict: "notification_id,user_id", ignoreDuplicates: true });
+  check(error);
+}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { ShieldAlert, Download, ChevronDown } from "lucide-react";
-import { Card, SectionLabel, Badge, FlagsPanel } from "./ui";
+import { Download } from "lucide-react";
+import { Card, SectionLabel, Badge } from "./ui";
 import { LINES } from "../lib/constants";
 import { reconciliation, dailyStockReport, profitLossForPeriod } from "../lib/business";
 import { fmt } from "../lib/format";
@@ -80,93 +80,32 @@ function TrendChart({ data, color, height = 90 }) {
   );
 }
 
-// Low stock, kept short by default: a summary line and the few most urgent items, with the
-// full list (grouped under the storekeeper's headings) one click away. Items that are empty
-// but have no reorder level set aren't "running low" as such, so they sit in their own fold.
-export function LowStockCard({ inventory }) {
-  const [open, setOpen] = useState(false);
-  const [showUntracked, setShowUntracked] = useState(false);
-  const { urgent, untracked } = useMemo(() => {
-    const low = inventory.filter((i) => i.quantity <= i.reorderLevel);
-    return {
-      urgent: low.filter((i) => i.reorderLevel > 0).sort((a, b) => a.quantity / a.reorderLevel - b.quantity / b.reorderLevel || a.name.localeCompare(b.name)),
-      untracked: low.filter((i) => i.reorderLevel <= 0).sort((a, b) => a.name.localeCompare(b.name)),
-    };
-  }, [inventory]);
-
-  const group = (items) => {
-    const by = {};
-    items.forEach((i) => (by[i.category || "Other items"] ||= []).push(i));
-    return Object.entries(by).sort((a, b) => a[0].localeCompare(b[0]));
-  };
-  const chip = (i, muted) => (
-    <div key={i.id} className="text-sm flex items-center justify-between gap-2 px-2.5 py-1.5 rounded border border-[var(--basalt)]/10 bg-white"
-      style={muted ? { opacity: 0.7 } : undefined} title={i.reorderLevel > 0 ? `Reorder at ${i.reorderLevel} ${i.unit}` : "No reorder level set"}>
-      <span className="truncate">{i.name}</span>
-      <span className="font-mono text-xs whitespace-nowrap" style={{ color: muted ? "inherit" : "var(--ember)", fontWeight: 600 }}>{i.quantity} {i.unit}</span>
-    </div>
-  );
-  const grid = "grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3";
-  const total = urgent.length + untracked.length;
-
+// "Needs attention": a row of small counters instead of long lists on the dashboard. Tapping a
+// counter either opens the screen that holds the full list (low stock) or unfolds a short
+// preview right underneath (everything else). The dashboard itself stays a few lines tall.
+function AttentionSummary({ tiles }) {
+  const [open, setOpen] = useState(null);
+  const active = tiles.find((t) => t.key === open && !t.goTo);
   return (
     <Card>
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-3 text-left" aria-expanded={open}>
-        <div className="flex flex-wrap items-center gap-2">
-          <SectionLabel>Low stock</SectionLabel>
-          {urgent.length > 0 && <Badge color="#B54A28">{urgent.length} to reorder</Badge>}
-          {untracked.length > 0 && <Badge color="#8A857C">{untracked.length} empty, no reorder level</Badge>}
-          {total === 0 && <span className="text-sm text-[var(--basalt)]/50 mb-3">All levels healthy.</span>}
-        </div>
-        {total > 0 && <ChevronDown size={18} className="mb-3 shrink-0 transition-transform" style={{ transform: open ? "rotate(180deg)" : "none" }} />}
-      </button>
-
-      {total > 0 && !open && urgent.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {urgent.slice(0, 6).map((i) => (
-            <span key={i.id} className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(181,74,40,0.10)", color: "var(--ember)" }}>
-              {i.name} · {i.quantity} {i.unit}
-            </span>
-          ))}
-          {urgent.length > 6 && <button onClick={() => setOpen(true)} className="text-xs px-2 py-1 rounded-full border border-[var(--basalt)]/20">+{urgent.length - 6} more</button>}
-        </div>
-      )}
-      {total > 0 && !open && urgent.length === 0 && (
-        <p className="text-xs text-[var(--basalt)]/50">Nothing is below its reorder level. Open to see items that are empty but have no reorder level set.</p>
-      )}
-
-      {open && (
-        <div className="max-h-[28rem] overflow-y-auto pr-1 space-y-4">
-          {group(urgent).map(([cat, items]) => (
-            <div key={cat}>
-              <div className="text-xs uppercase tracking-wide text-[var(--basalt)]/50 mb-1.5">{cat} ({items.length})</div>
-              <div className={grid}>{items.map((i) => chip(i, false))}</div>
-            </div>
-          ))}
-          {untracked.length > 0 && (
-            <div>
-              <button onClick={() => setShowUntracked((v) => !v)} className="text-xs flex items-center gap-1 text-[var(--basalt)]/60 underline">
-                {showUntracked ? "Hide" : "Show"} {untracked.length} empty item{untracked.length === 1 ? "" : "s"} with no reorder level
-              </button>
-              {showUntracked && (
-                <div className="mt-2 space-y-3">
-                  {group(untracked).map(([cat, items]) => (
-                    <div key={cat}>
-                      <div className="text-xs uppercase tracking-wide text-[var(--basalt)]/40 mb-1.5">{cat} ({items.length})</div>
-                      <div className={grid}>{items.map((i) => chip(i, true))}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      <SectionLabel>Needs attention</SectionLabel>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {tiles.map((t) => (
+          <button key={t.key} onClick={() => (t.goTo ? t.goTo() : setOpen(open === t.key ? null : t.key))}
+            className="text-left p-3 rounded-md border-2"
+            style={{ borderColor: open === t.key ? "var(--basalt)" : t.count > 0 ? "rgba(181,74,40,0.35)" : "rgba(38,34,29,0.12)", background: "white" }}>
+            <div className="text-2xl font-semibold" style={{ fontFamily: "'IBM Plex Mono', monospace", color: t.count > 0 ? "var(--ember)" : "var(--moss)" }}>{t.count}</div>
+            <div className="text-xs font-medium mt-0.5">{t.label}</div>
+            <div className="text-[11px] text-[var(--basalt)]/45 mt-0.5">{t.count > 0 ? t.hint : "All clear"}</div>
+          </button>
+        ))}
+      </div>
+      {active && active.count > 0 && <div className="mt-3 max-h-64 overflow-y-auto border-t border-[var(--basalt)]/10 pt-3">{active.render()}</div>}
     </Card>
   );
 }
 
-export function Dashboard({ orders, inventory, stockEvents, menu, flags, fixedCosts = [] }) {
+export function Dashboard({ orders, inventory, stockEvents, menu, flags, fixedCosts = [], stockAlertCount = 0, goTo }) {
   const [rangeKey, setRangeKey] = useState("month");
   const [customStart, setCustomStart] = useState(todayStr());
   const [customEnd, setCustomEnd] = useState(todayStr());
@@ -341,58 +280,47 @@ export function Dashboard({ orders, inventory, stockEvents, menu, flags, fixedCo
         <Card><SectionLabel>cancelled</SectionLabel><div className="text-2xl font-semibold" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{pipeline.cancelled || 0}</div></Card>
       </div>
 
-      <FlagsPanel flags={flags} />
-
-      <Card>
-        <SectionLabel>Today's flagged items</SectionLabel>
-        <p className="text-xs text-[var(--basalt)]/50 mb-3">Items where what the storekeeper recorded today doesn't match what today's orders imply should've been used.</p>
-        {todayFlagged.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">Nothing flagged for today.</p> : (
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10">
-              <th className="py-2 pr-3">Item</th><th className="py-2 pr-3">Recorded out</th><th className="py-2 pr-3">System estimate</th><th className="py-2 pr-3">Variance</th>
-            </tr></thead>
-            <tbody>
-              {todayFlagged.map((r) => (
-                <tr key={r.id} className="border-b border-[var(--basalt)]/5" style={{ background: "rgba(181,74,40,0.06)" }}>
-                  <td className="py-2 pr-3">{r.name}</td>
-                  <td className="py-2 pr-3 font-mono text-xs">{r.outByReason.usage} {r.unit}</td>
-                  <td className="py-2 pr-3 font-mono text-xs">{r.expectedOut.toFixed(1)} {r.unit}</td>
-                  <td className="py-2 pr-3 font-mono text-xs" style={{ color: "var(--ember)", fontWeight: 600 }}>
-                    {r.variance > 0 ? "+" : ""}{r.variance.toFixed(1)} {r.unit} <ShieldAlert size={12} className="inline ml-1" />
-                  </td>
-                </tr>
+      <AttentionSummary tiles={[
+        { key: "low", label: "Low stock", count: stockAlertCount, hint: "Open the list", goTo: goTo ? () => goTo("stockalerts") : null },
+        {
+          key: "flags", label: "Operational flags", count: flags.length, hint: "Show details",
+          render: () => (
+            <ul className="space-y-1.5">
+              {flags.slice(0, 8).map((f) => <li key={f.id} className="text-sm flex gap-2"><Badge color={f.severity === "high" ? "#B54A28" : "#B8923F"}>{f.role}</Badge><span>{f.msg}</span></li>)}
+              {flags.length > 8 && <li className="text-xs text-[var(--basalt)]/50">and {flags.length - 8} more</li>}
+            </ul>
+          ),
+        },
+        {
+          key: "today", label: "Stock differences today", count: todayFlagged.length, hint: "Show details",
+          render: () => (
+            <ul className="space-y-1.5">
+              {todayFlagged.slice(0, 8).map((r) => (
+                <li key={r.id} className="text-sm flex flex-wrap gap-x-3">
+                  <span className="font-medium">{r.name}</span>
+                  <span className="text-xs text-[var(--basalt)]/60 font-mono">recorded {r.out} {r.unit} · system {r.expectedOut.toFixed(1)} {r.unit} · {r.variance > 0 ? "+" : ""}{r.variance.toFixed(1)}</span>
+                </li>
               ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      <Card>
-        <SectionLabel>Inventory reconciliation — last 30 days</SectionLabel>
-        <p className="text-xs text-[var(--basalt)]/50 mb-3">Compares expected ingredient use (from served orders' recipes) against what storekeepers logged as "usage" stock-out. Large gaps may point to over-portioning, waste, or unrecorded loss.</p>
-        {recon.length === 0 ? <p className="text-sm text-[var(--basalt)]/50">No recipe-linked inventory activity yet.</p> : (
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-[var(--basalt)]/50 border-b border-[var(--basalt)]/10">
-              <th className="py-2 pr-3">Ingredient</th><th className="py-2 pr-3">Expected use</th><th className="py-2 pr-3">Actual logged</th><th className="py-2 pr-3">Variance</th><th className="py-2 pr-3">Logged by</th>
-            </tr></thead>
-            <tbody>
-              {recon.map((r) => (
-                <tr key={r.name} className="border-b border-[var(--basalt)]/5" style={{ background: r.flagged ? "rgba(181,74,40,0.06)" : "transparent" }}>
-                  <td className="py-2 pr-3">{r.name}</td>
-                  <td className="py-2 pr-3 font-mono text-xs">{r.expected.toFixed(1)} {r.unit}</td>
-                  <td className="py-2 pr-3 font-mono text-xs">{r.actual.toFixed(1)} {r.unit}</td>
-                  <td className="py-2 pr-3 font-mono text-xs" style={{ color: r.flagged ? "var(--ember)" : "inherit", fontWeight: r.flagged ? 600 : 400 }}>
-                    {r.variance > 0 ? "+" : ""}{r.variance.toFixed(1)} {r.unit} {r.flagged && <ShieldAlert size={12} className="inline ml-1" />}
-                  </td>
-                  <td className="py-2 pr-3 text-xs">{r.loggedBy.join(", ") || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      <LowStockCard inventory={inventory} />
+            </ul>
+          ),
+        },
+        {
+          key: "recon", label: "Usage gaps (30 days)", count: recon.filter((r) => r.flagged).length, hint: "Show details",
+          render: () => (
+            <div>
+              <ul className="space-y-1.5">
+                {recon.filter((r) => r.flagged).slice(0, 8).map((r) => (
+                  <li key={r.name} className="text-sm flex flex-wrap gap-x-3">
+                    <span className="font-medium">{r.name}</span>
+                    <span className="text-xs text-[var(--basalt)]/60 font-mono">expected {r.expected.toFixed(1)} · recorded {r.actual.toFixed(1)} {r.unit} · {r.variance > 0 ? "+" : ""}{r.variance.toFixed(1)}</span>
+                  </li>
+                ))}
+              </ul>
+              {goTo && <button onClick={() => goTo("inventory")} className="text-xs underline text-[var(--basalt)]/60 mt-2">Full table in Inventory</button>}
+            </div>
+          ),
+        },
+      ]} />
     </div>
   );
 }

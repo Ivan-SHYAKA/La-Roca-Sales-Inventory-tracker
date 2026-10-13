@@ -3,6 +3,7 @@ import { BellRing, AlertTriangle, X } from "lucide-react";
 const STYLE_BY_TYPE = {
   info: { background: "var(--basalt)", icon: BellRing },
   error: { background: "var(--ember)", icon: AlertTriangle },
+  warn: { background: "var(--gold)", icon: AlertTriangle },
 };
 
 // Fixed top-right stack so kitchen/barista/sales notice a new order without staring at

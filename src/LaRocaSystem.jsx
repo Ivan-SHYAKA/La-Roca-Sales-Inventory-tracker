@@ -21,12 +21,12 @@ import { StaffActivity } from "./components/StaffActivity";
 import { Loans } from "./components/Loans";
 import { CashBook } from "./components/CashBook";
 import { DailyStockReport } from "./components/DailyStockReport";
-import { StockAlertsBanner } from "./components/StockAlertsBanner";
+import { StockAlertsPanel } from "./components/StockAlertsPanel";
 import { ActivityLog } from "./components/ActivityLog";
 import { FixedCosts } from "./components/FixedCosts";
 import { Insights } from "./components/Insights";
 import { ToastStack } from "./components/Toasts";
-import { NotificationCenter } from "./components/NotificationCenter";
+import { NotificationBell } from "./components/NotificationBell";
 import logo from "./assets/la-roca-logo.svg";
 
 const WRAPPER_STYLE = {
@@ -73,8 +73,8 @@ export default function LaRocaSystem() {
   const pushToast = useCallback((message, type = "info") => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setToasts((t) => [...t, { id, message, type }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), type === "error" ? 10000 : 8000);
-    if (type === "error") playAlert(); else playChime();
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), type === "error" || type === "warn" ? 10000 : 8000);
+    if (type === "error" || type === "warn") playAlert(); else playChime();
   }, []);
   const pushError = useCallback((message) => pushToast(message, "error"), [pushToast]);
 
@@ -190,6 +190,25 @@ export default function LaRocaSystem() {
     seenOrderIds.current = new Set(orders.map((o) => o.id));
   }, [orders, session]);
 
+  // Alerts (low stock, shortages) arrive as a toast with a sound; no popup to dismiss. The first
+  // snapshot after sign-in is skipped so what was already there doesn't all ping at once.
+  const seenNotificationIds = useRef(null);
+  useEffect(() => { seenNotificationIds.current = null; }, [session?.id]);
+  useEffect(() => {
+    if (!session) return;
+    const prev = seenNotificationIds.current;
+    if (prev) {
+      const orderSource = session.role === "storekeeper" ? storeOrders : orders;
+      notifications
+        .filter((n) => !prev.has(n.id) && n.type !== "new_order")
+        .forEach((n) => {
+          const o = n.orderId ? orderSource.find((x) => x.id === n.orderId) : null;
+          pushToast(`${n.title}: ${o ? `${orderLabel(o)} — ` : ""}${n.message}`, "warn");
+        });
+    }
+    seenNotificationIds.current = new Set(notifications.map((n) => n.id));
+  }, [notifications, session]);
+
   // Activity by other people that the manager hasn't marked as read yet (shown on the tab and
   // in the browser tab title, so it's visible from any screen).
   const activitySeenAt = users.find((u) => u.id === session?.id)?.activitySeenAt || null;
@@ -218,20 +237,20 @@ export default function LaRocaSystem() {
 
   // Sign-ups waiting on the manager: surfaced on the tab itself so they don't sit unnoticed.
   const pendingSignups = users.filter((u) => u.signupPending).length;
+  const stockAlertsLabel = stockAlerts.length ? `Stock Alerts (${stockAlerts.length})` : "Stock Alerts";
   const tabsForRole = {
-    manager: [["dashboard", "Dashboard"], ["insights", "Insights"], ["staffactivity", activityUnread ? `Staff Activity (${activityUnread})` : "Staff Activity"], ["billing", pendingRemovals ? `Orders (${pendingRemovals} to approve)` : "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["cashbook", "Cash & MoMo"], ["loans", "Loans"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
+    manager: [["dashboard", "Dashboard"], ["insights", "Insights"], ["staffactivity", activityUnread ? `Staff Activity (${activityUnread})` : "Staff Activity"], ["billing", pendingRemovals ? `Orders (${pendingRemovals} to approve)` : "Orders"], ["checkin", "Check-in"], ["menu", "Menu & Recipes"], ["inventory", "Inventory"], ["stockalerts", stockAlertsLabel], ["dailyreport", "Daily Stock Report"], ["fixedcosts", "Fixed Costs"], ["cashbook", "Cash & MoMo"], ["loans", "Loans"], ["users", pendingSignups ? `Users (${pendingSignups} new)` : "Users"], ["activity", "My Activity"]],
     waiter: [["neworder", "Take Order"], ["readytoserve", "Ready to Serve"], ["activity", "My Activity"]],
     sales: [["neworder", "New Order / Booking"], ["readytoserve", "Ready to Serve"], ["checkin", "Check-in"], ["billing", "Orders & Billing"], ["activity", "My Activity"]],
-    kitchen: [["kitchenqueue", "Kitchen Queue"], ["activity", "My Activity"]],
+    kitchen: [["kitchenqueue", "Kitchen Queue"], ["stockalerts", stockAlertsLabel], ["activity", "My Activity"]],
     barista: [["baristaqueue", "Barista Queue"], ["activity", "My Activity"]],
-    storekeeper: [["dailysheet", "Daily Sheet"], ["dailyreport", "Orders & Report"], ["stockin", "Stock In"], ["stockout", "Stock Out"], ["inventory", "Inventory"], ["activity", "My Activity"]],
+    storekeeper: [["dailysheet", "Daily Sheet"], ["dailyreport", "Orders & Report"], ["stockin", "Stock In"], ["stockout", "Stock Out"], ["inventory", "Inventory"], ["stockalerts", stockAlertsLabel], ["activity", "My Activity"]],
   }[session.role];
 
   return (
     <div style={WRAPPER_STYLE}>
       <FontStyle />
       <ToastStack toasts={toasts} onDismiss={(id) => setToasts((t) => t.filter((x) => x.id !== id))} />
-      <NotificationCenter notifications={notifications} orders={session.role === "storekeeper" ? storeOrders : orders} session={session} refresh={loadData} onError={pushError} />
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6 pb-5 no-print" style={{ borderBottom: "2px solid var(--basalt)" }}>
         <div className="flex items-center gap-3">
           <img src={logo} alt="La Roca" className="w-16 h-16" />
@@ -249,20 +268,18 @@ export default function LaRocaSystem() {
               </button>
             ))}
           </nav>
+          <NotificationBell notifications={notifications} orders={session.role === "storekeeper" ? storeOrders : orders} session={session} refresh={loadData} onError={pushError} />
           <button onClick={() => supabase.auth.signOut()} className="flex items-center gap-1 text-sm text-[var(--basalt)]/60"><LogOut size={15} /> Sign out</button>
         </div>
       </div>
 
-      {["kitchen", "storekeeper", "manager"].includes(session.role) && (
-        <StockAlertsBanner
-          alerts={stockAlerts}
-          canResolve={session.role === "storekeeper" || session.role === "manager"}
-          refresh={loadData}
-          onError={pushError}
-        />
-      )}
 
-      {tab === "dashboard" && <Dashboard orders={orders} inventory={inventory} stockEvents={stockEvents} menu={menu} flags={flags} fixedCosts={fixedCosts} />}
+      {tab === "dashboard" && (
+        <Dashboard orders={orders} inventory={inventory} stockEvents={stockEvents} menu={menu} flags={flags} fixedCosts={fixedCosts} stockAlertCount={stockAlerts.length} goTo={setTab} />
+      )}
+      {tab === "stockalerts" && ["kitchen", "storekeeper", "manager"].includes(session.role) && (
+        <StockAlertsPanel alerts={stockAlerts} inventory={inventory} canResolve={session.role === "storekeeper" || session.role === "manager"} refresh={loadData} onError={pushError} />
+      )}
       {tab === "menu" && <MenuManager menu={menu} inventory={inventory} session={session} refresh={loadData} onError={pushError} />}
       {tab === "cashbook" && session.role === "manager" && <CashBook orders={orders} days={cashDays} session={session} refresh={loadData} onError={pushError} />}
       {tab === "loans" && session.role === "manager" && <Loans loans={loans} repayments={loanRepayments} session={session} refresh={loadData} onError={pushError} />}
